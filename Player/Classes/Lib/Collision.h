@@ -6,9 +6,8 @@
 #include "Lib/Macros.h"
 #include "Lib/Common.h"
 #include "Manager/PrimitiveManager.h"
-#ifdef USE_MULTITHREAD_OBJECT_UPDATE
 #include "Lib/Slope.h"
-#endif
+#include "Lib/MtVector.h"
 #include "Manager/ThreadManager.h"
 
 #if defined(AGUSA_K)
@@ -473,9 +472,9 @@ void newCheckWallHit(WallHitInfo &wallHitInfo, bool& hitX, bool& hitY, int tileT
 void newCheckWallHit(WallHitInfo &wallHitInfo, bool& hitX, bool& hitY, agtk::WallHitInfoGroup* infoGroup, Vec2& moveVec, Vec2 nowMoveVec);
 void newCheckWallHit(Rect& crntRect, Rect slopeCheckRect, bool& hitX, bool& hitY, int tileThreshold, std::vector<agtk::Tile *> &tileList, agtk::MtVector<agtk::Slope *> *slopeList, agtk::MtVector<agtk::Slope *> *passableSlopeList, Vec2& moveVec, Vec2& tileThresholdMoveVec, Rect& oldRect, agtk::Object* object, bool falling, bool slope, agtk::HitWallTiles& hitTiles);
 #else
-void newCheckWallHit(WallHitInfo &wallHitInfo, bool& hitX, bool& hitY, int tileThreshold, cocos2d::Array* tileList, cocos2d::Array* slopeList, cocos2d::Array* passableSlopeList, Vec2& moveVec, Vec2& tileThresholdMoveVec, Rect& oldRect, bool falling, bool slope);
+void newCheckWallHit(WallHitInfo &wallHitInfo, bool& hitX, bool& hitY, int tileThreshold, cocos2d::Array* tileList, cocos2d::Array* slopeList, cocos2d::Array* passableSlopeList, Vec2& moveVec, Vec2& tileThresholdMoveVec, Rect& oldRect, bool falling, bool slope, agtk::HitWallTiles& hitTiles);
 void newCheckWallHit(WallHitInfo &wallHitInfo, bool& hitX, bool& hitY, agtk::WallHitInfoGroup* infoGroup, Vec2& moveVec, Vec2 nowMoveVec);
-void newCheckWallHit(Rect& crntRect, Rect slopeCheckRect, bool& hitX, bool& hitY, int tileThreshold, cocos2d::Array* tileList, cocos2d::Array* slopeList, cocos2d::Array* passableSlopeList, Vec2& moveVec, Vec2& tileThresholdMoveVec, Rect& oldRect, agtk::Object* object, bool falling, bool slope);
+void newCheckWallHit(Rect& crntRect, Rect slopeCheckRect, bool& hitX, bool& hitY, int tileThreshold, cocos2d::Array* tileList, cocos2d::Array* slopeList, cocos2d::Array* passableSlopeList, Vec2& moveVec, Vec2& tileThresholdMoveVec, Rect& oldRect, agtk::Object* object, bool falling, bool slope, agtk::HitWallTiles& hitTiles);
 #endif
 
 #ifdef USE_MULTITHREAD_OBJECT_UPDATE

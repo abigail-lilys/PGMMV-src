@@ -2,6 +2,9 @@
  * @brief オブジェクト
  */
 #include "Object.h"
+#ifdef __EMSCRIPTEN__
+#include <stdio.h>
+#endif
 #include "Portal.h"
 #include "Lib/Collision.h"
 #include "Lib/Slope.h"
@@ -4025,7 +4028,7 @@ static bool intersectsRectWithLiftMargin(const Rect &rect1, const Rect& rect2, f
 }
 
 // #AGTK-NX #AGTK-WIN
-#ifdef USE_SAR_FIX_AND_OPTIMIZE_1
+#if defined(USE_SAR_FIX_AND_OPTIMIZE_1) && defined(USE_MULTITHREAD_OBJECT_UPDATE)
 int checkObjectWallHitDivIndex(LockObjList &lockObjList, cocos2d::Rect &crntRect, cocos2d::Vec2 move, int crntIndex, int div, MtVector<Object *>* hitObjectList)
 {
 	// 移動しない場合はヒットしない
@@ -4609,7 +4612,7 @@ void newCalcWallHitInfo(agtk::Object* object, WallHitInfo &wallHitInfo, cocos2d:
 	Vec2 pos, newPos, moveVec;
 	// 移動量を分割して接触判定を行う
 // #AGTK-NX #AGTK-WIN
-#ifdef USE_SAR_FIX_AND_OPTIMIZE_1
+#if defined(USE_SAR_FIX_AND_OPTIMIZE_1) && defined(USE_MULTITHREAD_OBJECT_UPDATE)
 	// 移動範囲のタイルリストを保存
 	std::vector<agtk::Tile *> orgTileList = tileList;
 
@@ -5172,7 +5175,7 @@ void newCalcWallHitInfo(agtk::Object* object, WallHitInfo &wallHitInfo, cocos2d:
 #else
 	for (int i = 1; i <= div; i++) {
 // #AGTK-NX #AGTK-WIN
-#ifdef USE_30FPS_2
+#if defined(USE_30FPS_2) && !defined(USE_30FPS_3)
 		// 中間地点の壁判定結果を記録
 		if (passCount > 1) {
 			float checkDist = (wallHitInfo.boundMin - iniPrevWallPos).length();
@@ -6038,9 +6041,10 @@ std::vector<agtk::Tile *> getFilteredListByTileGroup(const std::vector<agtk::Til
 	return newList;
 }
 #else
-cocos2d::__Array *getFilteredListByTileGroup(cocos2d::__Array *list, collideWithTileGroupBit)
+cocos2d::__Array *getFilteredListByTileGroup(cocos2d::__Array *list, int collideWithTileGroupBit)
 {
 	auto newList = cocos2d::__Array::create();
+	cocos2d::Ref *ref = nullptr;
 	CCARRAY_FOREACH(list, ref) {
 		auto tile = dynamic_cast<agtk::Tile *>(ref);
 		if ((tile->getGroupBit() & collideWithTileGroupBit)) {
@@ -6049,7 +6053,6 @@ cocos2d::__Array *getFilteredListByTileGroup(cocos2d::__Array *list, collideWith
 	}
 	return newList;
 }
-tiles = nullptr;
 #endif
 // 衝突判定を行うタイルのリストを返す
 // @todo 対象のグループを絞ることで高速化できる。
@@ -6167,16 +6170,32 @@ cocos2d::__Array* getCollisionTileList(int type, int layerId, cocos2d::Point bou
 	}
 
 	//ソートオブジェクトに近いタイル順に並べる。
-	std::sort(tiles.begin(), tiles.end(), [&](agtk::Tile *a, agtk::Tile *b) {
+	auto compareTileDistance = [&](agtk::Tile *a, agtk::Tile *b) {
 		auto x = rect.getMidX();
 		auto y = rect.getMidY();
 		auto rectA = a->convertToLayerSpaceRect();
 		auto rectB = b->convertToLayerSpaceRect();
-
 		float lenA = cocos2d::Vec2(x, y).getDistance(cocos2d::Vec2(rectA.getMidX(), rectA.getMidY()));
 		float lenB = cocos2d::Vec2(x, y).getDistance(cocos2d::Vec2(rectB.getMidX(), rectB.getMidY()));
 		return lenA < lenB;
-	});
+	};
+#ifdef USE_MULTITHREAD_OBJECT_UPDATE
+	std::sort(tiles.begin(), tiles.end(), compareTileDistance);
+#else
+	if (tiles != nullptr) {
+		std::vector<agtk::Tile *> orderedTiles;
+		cocos2d::Ref *tileRef = nullptr;
+		CCARRAY_FOREACH(tiles, tileRef) {
+			auto tile = dynamic_cast<agtk::Tile *>(tileRef);
+			if (tile != nullptr) orderedTiles.push_back(tile);
+		}
+		std::sort(orderedTiles.begin(), orderedTiles.end(), compareTileDistance);
+		auto sortedArray = cocos2d::__Array::create();
+		for (auto tile : orderedTiles) sortedArray->addObject(tile);
+		tiles->removeAllObjects();
+		tiles->addObjectsFromArray(sortedArray);
+	}
+#endif
 
 	return tiles;
 }
@@ -8606,7 +8625,11 @@ void ObjectCollision::pushObject(cocos2d::Vec2& pushVec, cocos2d::Rect& pushRect
 #endif
 
 	// 押し出し方向を取得
+	#ifdef USE_MULTITHREAD_OBJECT_UPDATE
 	Vec2 moveVec = getPushObjectVec(pushVec, pushRect, infoGroup, buriedInWallFlag, bPushedMove);
+#else
+	Vec2 moveVec = getPushObjectVec(pushVec, pushRect, infoGroup, buriedInWallFlag, false);
+#endif
 
 	WallHitInfo hitInfo;
 
@@ -9438,7 +9461,7 @@ void ObjectCollision::checkAttackHitWall(float x, float y,int tileGroupBit)
 #ifdef USE_MULTITHREAD_OBJECT_UPDATE
 std::vector<agtk::Tile *> ObjectCollision::getWallCollisionTileList(cocos2d::Vec2 move, int collideWithTileGroupBit)
 #else
-cocos2d::__Array *ObjectCollision::getWallCollisionTileList(cocos2d::Vec2 move)
+cocos2d::__Array *ObjectCollision::getWallCollisionTileList(cocos2d::Vec2 move, int collideWithTileGroupBit)
 #endif
 {
 	auto object = _object;
@@ -10877,24 +10900,6 @@ void ObjectMovement::checkWallAndFloor(bool& hitWall, bool& hitFloor, std::vecto
 		auto size = rect.size;
 
 		bool bSlopeConnect = false;
-		if (slopeList && slopeList->count() > 0) {
-#ifdef USE_MULTITHREAD_OBJECT_UPDATE
-			bool bSkip = false;
-			for (int i = 0; i < (int)slopeList->count(); i++) {
-				auto slope = (*slopeList)[i];
-#else
-				cocos2d::Ref *ref2;
-				bool bSkip = false;
-				CCARRAY_FOREACH(slopeList, ref2) {
-				auto slope = dynamic_cast<agtk::Slope *>(ref2);
-#endif
-				if (slope->checkConnectTileUp(rect, objRect, move, true)) {
-					bSlopeConnect = true;
-					break;
-				}
-			}
-		}
-
 		if (move.x != 0) {
 			pos.y += TILE_COLLISION_THRESHOLD;
 			size.height -= TILE_COLLISION_THRESHOLD * 2;
@@ -10906,6 +10911,24 @@ void ObjectMovement::checkWallAndFloor(bool& hitWall, bool& hitFloor, std::vecto
 		wallRect = Rect(pos, size);
 
 		if (wallRect.intersectsRect(objRect)) {
+			if (slopeList && slopeList->count() > 0) {
+#ifdef USE_MULTITHREAD_OBJECT_UPDATE
+				bool bSkip = false;
+				for (int i = 0; i < (int)slopeList->count(); i++) {
+					auto slope = (*slopeList)[i];
+#else
+					cocos2d::Ref *ref2;
+					bool bSkip = false;
+					CCARRAY_FOREACH(slopeList, ref2) {
+					auto slope = dynamic_cast<agtk::Slope *>(ref2);
+#endif
+					if (slope->checkConnectTileUp(rect, objRect, move, true)) {
+						bSlopeConnect = true;
+						break;
+					}
+				}
+			}
+
 			if (bSlopeConnect && move.x != 0.0f) {
 				if (move.x < 0) bLeftWallCollied = false;//左
 				if (move.x > 0) bRightWallCollied = false;//右
@@ -15302,6 +15325,7 @@ void Object::wallCollisionCorrection(float x, float y, EnumChangeAction changeAc
 		this->getObjectWallCollision()->updateWall(x, y, &moveX, &moveY, &tileWallBit, &linkConditionTileWall, &aheadTileWall, &slopeBit, _leftWallObjectList, _rightWallObjectList, _upWallObjectList, _downWallObjectList, &buriedInWallFlag, returnedPos);
 #endif
 
+
 // #AGTK-NX #AGTK-WIN
 #if defined(USE_30FPS_3) && !defined(USE_30FPS_3_2)
 		if (gm->getPassCount() > 1) {
@@ -16453,6 +16477,8 @@ agtk::SceneLayer *Object::getSceneLayer()
 
 void Object::setSceneLayer(agtk::SceneLayer *sceneLayer)
 {
+
+
 	CC_ASSERT(sceneLayer);
 	CC_ASSERT(sceneLayer->getReferenceCount() > 0);
 	_sceneLayer = sceneLayer;

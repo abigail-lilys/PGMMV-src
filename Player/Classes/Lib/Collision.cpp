@@ -1,4 +1,4 @@
-﻿#include "Collision.h"
+#include "Collision.h"
 #include "Lib/Common.h"
 #include "Lib/Object.h"
 #include "Manager/GameManager.h"
@@ -2001,7 +2001,8 @@ bool pushBackBuriedWall(agtk::Object* object, cocos2d::Rect& objectRect, cocos2d
 	Vec2 tileThresholdMoveVec(0, 0); // [wasm-port] local vec
 	newCheckWallHit(info, hitX, hitY, 0, tileList, &slopeList, nullptr, moveVec, tileThresholdMoveVec, objectRect, false, false, hitTiles);
 #else
-	newCheckWallHit(info, hitX, hitY, 0, tileList, nullptr, nullptr, moveVec, Vec2(0, 0), objectRect, false, false, hitTiles);
+	Vec2 tileThresholdMoveVec(0, 0);
+	newCheckWallHit(info, hitX, hitY, 0, tileList, nullptr, nullptr, moveVec, tileThresholdMoveVec, objectRect, false, false, hitTiles);
 #endif
 #else
 #endif
@@ -4853,7 +4854,14 @@ int checkWallHitDivIndex(agtk::Object* object, Rect& crntRect, cocos2d::Vec2 mov
 
 			cocos2d::Point sp = slope->getWorldStartPoint();
 			cocos2d::Point ep = slope->getWorldEndPoint();
-			float dy = (ep.y - sp.y) / (ep.x - sp.x);
+			// PGMMV_VERTICAL_SLOPE_PREDICTION_GUARD_V1: avoid X-slope expansion for vertical slopes.
+			const float slopeDx = ep.x - sp.x;
+			const float slopeDy = ep.y - sp.y;
+			if (fabsf(slopeDx) <= 1.0e-4f * (fabsf(slopeDy) + 1.0f)) {
+			    // Conservative fallback: check the next real movement subdivision.
+			    return crntIndex + 1;
+			}
+			float dy = slopeDy / slopeDx;
 			if (ep.x >= sp.x) {
 				sp.x -= crntRect.size.width;
 				sp.y -= dy * crntRect.size.width;

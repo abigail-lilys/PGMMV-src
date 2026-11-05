@@ -1,4 +1,8 @@
-﻿#include "Scene.h"
+#include "Player/DynamicFpsProbe.h"
+#ifdef __EMSCRIPTEN__
+#include <stdint.h>
+#endif
+#include "Scene.h"
 #include "External/collision/CollisionComponent.hpp"
 #include "External/collision/CollisionUtils.hpp"
 #include "External/collision/CollisionDetaction.hpp"
@@ -33,6 +37,11 @@ extern int cachedCount;
 extern int roughWallCollisionCount;
 extern int roughHitCollisionCount;
 #endif
+
+#ifdef __EMSCRIPTEN__
+#include <stdio.h>
+#endif
+
 NS_AGTK_BEGIN
 
 //-------------------------------------------------------------------------------------------------------------------
@@ -58,44 +67,71 @@ bool SceneVariableTimer::init(agtk::data::PlayVariableData *data, EnumCountType 
 	return true;
 }
 
+
 void SceneVariableTimer::start(double seconds)
 {
-	this->getVariableData()->setValue(seconds);
-	_duration = 0.0f;
+    this->getVariableData()->setValue(seconds);
+    _duration = 0.0f;
 }
+
 
 void SceneVariableTimer::update(float dt)
 {
-	if (_duration < 0.0f) {
-		return;
-	}
-	auto scene = GameManager::getInstance()->getCurrentScene();
-	if (_object) {
-		if (_object->getDisabled() || _object->getWaitDuration300() == -1) {
-			return;
-		}
-		auto timeScale = scene->getGameSpeed()->getTimeScale(_object);
-		auto sceneLayer = _object->getSceneLayer();
-		if (!sceneLayer->getActiveFlg()) {
-			return;
-		}
-		auto sceneLayerType = sceneLayer->getType();
-		if (sceneLayerType == agtk::SceneLayer::kTypeMenu) {
-			timeScale = scene->getGameSpeed()->getTimeScale(SceneGameSpeed::eTYPE_MENU);
-		}
-		dt *= timeScale;
-	}
-	double value = this->getVariableData()->getValue();
-	_duration += dt;
-	if (this->getCountType() == kCountUp) {
-		value += dt;
-	}
-	else if (this->getCountType() == kCountDown) {
-		value -= dt;
-		if (value < 0.0f) value = 0.0f;
-	}
-	this->getVariableData()->setValue(value);
+    if (_duration < 0.0f) {
+        return;
+    }
+
+    auto scene = GameManager::getInstance()->getCurrentScene();
+
+    if (_object) {
+        const bool disabled = _object->getDisabled();
+
+        if (disabled) {
+            return;
+        }
+
+        const int waitDuration = _object->getWaitDuration300();
+
+        if (waitDuration == -1) {
+            return;
+        }
+
+        auto gameSpeed = scene->getGameSpeed();
+        auto timeScale = gameSpeed->getTimeScale(_object);
+        auto sceneLayer = _object->getSceneLayer();
+
+        const bool active = sceneLayer->getActiveFlg();
+
+        if (!active) {
+            return;
+        }
+
+        auto sceneLayerType = sceneLayer->getType();
+
+        if (sceneLayerType == agtk::SceneLayer::kTypeMenu) {
+            timeScale = gameSpeed->getTimeScale(SceneGameSpeed::eTYPE_MENU);
+        }
+
+        dt *= timeScale;
+    }
+
+    auto variableData = this->getVariableData();
+
+    double value = variableData->getValue();
+
+    _duration += dt;
+
+    if (this->getCountType() == kCountUp) {
+        value += dt;
+    }
+    else if (this->getCountType() == kCountDown) {
+        value -= dt;
+        if (value < 0.0f) value = 0.0f;
+    }
+
+    variableData->setValue(value);
 }
+
 
 //-------------------------------------------------------------------------------------------------------------------
 SceneSprite::SceneSprite()
@@ -2337,7 +2373,120 @@ float SceneGameSpeed::getTimeScale(Type type, agtk::Object const* object)const
 					}
 				};
 				
-				const std::function<void()> func[] = {
+				
+#if defined(__EMSCRIPTEN__)
+
+// [wasm-port] SCENE_GAMESPEED_SWITCH_DISPATCH
+// WASM 不使用 std::function 数组的间接调用器。
+
+#if CC_TARGET_PLATFORM != CC_PLATFORM_NX
+static_assert(
+    5 == static_cast<int>(
+        agtk::data::ObjectCommandGameSpeedChangeData::
+            EnumTargettingType::kTargettingMax
+    ),
+    "SceneGameSpeed target type count mismatch"
+);
+#endif
+
+const int targetObjectType = t._targetObjectType;
+
+if (targetObjectType < 0 || targetObjectType >= 5) {
+    static bool invalidTargetTypeLogged = false;
+
+    if (!invalidTargetTypeLogged) {
+        CCLOG(
+            "[wasm-port] INVALID SceneGameSpeed targetObjectType=%d, valid range=0..4",
+            targetObjectType
+        );
+        invalidTargetTypeLogged = true;
+    }
+}
+else {
+    // 每一种有效类型只记录一次，避免刷屏。
+    static bool dispatchLogged[5] = {
+        false, false, false, false, false
+    };
+
+    if (!dispatchLogged[targetObjectType]) {
+        CCLOG(
+            "[wasm-port] SceneGameSpeed dispatch targetObjectType=%d",
+            targetObjectType
+        );
+        dispatchLogged[targetObjectType] = true;
+    }
+
+    switch (targetObjectType) {
+    case 0:
+        if (
+            t._targetObjectGroup ==
+                data::ObjectCommandGameSpeedChangeData::kObjectGroupAll ||
+            t._targetObjectGroup ==
+                object->getObjectData()->getGroup()
+        ) {
+            gs = &data.gs;
+        }
+        break;
+
+    case 1:
+        if (
+            t._targetQualifierId ==
+                data::ObjectCommandData::kQualifierSingle
+        ) {
+            auto targetList = t._targetObjectList.get();
+
+            if (
+                targetList &&
+                targetList->containsObject(
+                    (cocos2d::Ref *)object
+                )
+            ) {
+                gs = &data.gs;
+            }
+        }
+        else if (
+            t._targetQualifierId ==
+                data::ObjectCommandData::kQualifierWhole
+        ) {
+            if (
+                t._targetObjectId ==
+                object->getObjectData()->getId()
+            ) {
+                gs = &data.gs;
+            }
+        }
+        else {
+            if (
+                t._targetObjectId ==
+                object->getObjectData()->getId()
+            ) {
+                auto instanceId =
+                    object->getPlayObjectData()->getInstanceId();
+
+                if (t._targetQualifierId == instanceId) {
+                    gs = &data.gs;
+                }
+            }
+        }
+        break;
+
+    case 2:
+    case 3:
+        targetFindFunc();
+        break;
+
+    case 4:
+        gs = &data.gs;
+        break;
+
+    default:
+        break;
+    }
+}
+
+#else
+
+const std::function<void()> func[] = {
 					[&]() {
 						if (t._targetObjectGroup == data::ObjectCommandGameSpeedChangeData::kObjectGroupAll || t._targetObjectGroup == object->getObjectData()->getGroup()) {
 							gs = &data.gs;
@@ -2374,6 +2523,9 @@ float SceneGameSpeed::getTimeScale(Type type, agtk::Object const* object)const
 #endif
 
 				func[t._targetObjectType]();
+
+#endif // __EMSCRIPTEN__
+
 			}	
 			else 
 			{// 対象がオブジェクトでない場合
@@ -2773,6 +2925,8 @@ SceneLayer::SceneLayer()
 
 SceneLayer::~SceneLayer()
 {
+
+
 #ifdef USE_REDUCE_RENDER_TEXTURE
 	CC_SAFE_RELEASE_NULL(_tileMapNode);
 #endif
@@ -3928,6 +4082,14 @@ void SceneLayer::end()
 			auto obj = dynamic_cast<agtk::Object *>(ref);
 #endif
 			bool bIgnoredReappearCondition = true;//※シーン終了での消滅後の復活条件は無視。
+
+			// [wasm-fix] SceneLayer::end は Object::removeSelf を
+			// 経由しないため、ここで Object の Timer を先に解除する。
+			auto owningScene = this->getScene();
+			if (owningScene != nullptr && obj != nullptr) {
+				owningScene->removeObjectVariableTimer(obj);
+			}
+
 			this->removeObject(obj, bIgnoredReappearCondition, false, false);
 		}
 		objectList->removeAllObjects();
@@ -10607,7 +10769,7 @@ void SceneLayer::callbackDetectionWallCollision(CollisionNode* collisionObject1,
 	auto threadManager = ThreadManager::getInstance();
 	for (int i = 0; i < AGTK_THREAD_COUNT - 1; i++) {
 		auto threadInfo = threadManager->getThreadInfo(i);
-		if (std::this_thread::get_id() == threadInfo->thread->get_id()) {
+		if (threadInfo->thread /*PGMMV_MT_NULLTHREAD_GUARD_V1*/ && std::this_thread::get_id() == threadInfo->thread->get_id()) {
 			// サブスレッドから呼ばれた場合
 			mainThread = false;
 			auto subInfo = (ObjectUpdateThreadInfo *)threadInfo->subInfo;
@@ -10709,7 +10871,7 @@ void SceneLayer::updateThreadWallCollision(Object *wallCollisionObject, const De
 			ObjectUpdateThreadInfo *subInfo = nullptr;
 			for (i = 0; i < AGTK_THREAD_COUNT - 1; i++) {
 				threadInfo = threadManager->getThreadInfo(i);
-				if (std::this_thread::get_id() == threadInfo->thread->get_id()) {
+				if (threadInfo->thread /*PGMMV_MT_NULLTHREAD_GUARD_V1*/ && std::this_thread::get_id() == threadInfo->thread->get_id()) {
 					// サブスレッドから呼ばれた場合
 					mainThread = false;
 					subInfo = (ObjectUpdateThreadInfo *)threadInfo->subInfo;
@@ -10876,6 +11038,11 @@ Scene::Scene()
 
 Scene::~Scene()
 {
+
+
+    CC_SAFE_RELEASE_NULL(_variableTimerList);
+
+
 	CC_SAFE_RELEASE_NULL(_layer);
 	CC_SAFE_RELEASE_NULL(_sceneBackground);
 	CC_SAFE_RELEASE_NULL(_sceneLayerList);
@@ -10888,7 +11055,6 @@ Scene::~Scene()
 	CC_SAFE_RELEASE_NULL(_gameSpeed);
 	CC_SAFE_RELEASE_NULL(_shake);
 	CC_SAFE_RELEASE_NULL(_sceneData);
-	CC_SAFE_RELEASE_NULL(_variableTimerList);
 	CC_SAFE_RELEASE_NULL(_cameraObjectList);
 	CC_SAFE_RELEASE_NULL(_courseList);
 
