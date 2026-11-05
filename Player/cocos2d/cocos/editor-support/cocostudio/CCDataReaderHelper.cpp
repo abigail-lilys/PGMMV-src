@@ -383,7 +383,9 @@ void DataReaderHelper::addDataFromFileAsync(const std::string& imagePath, const 
         _dataQueue = new (std::nothrow) std::queue<DataInfo *>();
 
 		// create a new thread to load images
-		_loadingThread = new std::thread(&DataReaderHelper::loadData, this);
+		cocos2d::log("[THREADPROBE] DataReaderHelper::addDataFromFileAsync: about to construct std::thread");
+    fflush(stdout);
+    _loadingThread = new std::thread(&DataReaderHelper::loadData, this);
 
         need_quit = false;
     }

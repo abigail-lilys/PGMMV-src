@@ -1,4 +1,12 @@
-﻿#include "GameManager.h"
+﻿// PGMMV_STAGE2_PROBE_V1
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#define PGMMV_STAGE_TRACE(message) EM_ASM({ if (typeof Module !== "undefined" && Module.pgmmv && Module.pgmmv.trace) Module.pgmmv.trace(UTF8ToString($0)); }, message)
+#else
+#define PGMMV_STAGE_TRACE(message) ((void)0)
+#endif
+
+#include "GameManager.h"
 #include "DebugManager.h"
 
 #include "AppMacros.h"
@@ -337,7 +345,9 @@ void GameManager::purge()
 #endif
 
 #ifdef USE_MULTITHREAD_OBJECT_UPDATE
+	#ifdef USE_MULTITHREAD_OBJECT_UPDATE
 	ThreadManager::purge();
+	#endif // USE_MULTITHREAD_OBJECT_UPDATE
 #endif
 	if (ScriptingCore::isCreateInstance()) {
 		ScriptingCore* sc = ScriptingCore::getInstance();
@@ -4040,6 +4050,7 @@ std::string GameManager::getProjectPathFromProjectFile(const std::string &filePa
 
 void GameManager::loadJsonFile(std::string projectFilePath)
 {
+    PGMMV_STAGE_TRACE("GM_ENTER_LOADJSON");
 	auto filePath = projectFilePath;
 	setProjectFilePath(cocos2d::String::create(filePath));
 #if 0
@@ -4071,7 +4082,9 @@ void GameManager::loadJsonFile(std::string projectFilePath)
 	GameManager::getInstance()->actionLog(1, jsonData.c_str());
 #endif
 	rapidjson::Document doc;
-	doc.Parse(jsonData.c_str());
+	PGMMV_STAGE_TRACE("GM_BEFORE_JSON_PARSE");
+    doc.Parse(jsonData.c_str());
+    PGMMV_STAGE_TRACE("GM_AFTER_JSON_PARSE");
 	bool error = doc.HasParseError();
 	CCLOG("[PGMMV-DIAG] parseError=%d parseCode=%d offset=%lu rootObject=%d",
 	    error ? 1 : 0, (int)doc.GetParseError(),
@@ -4091,23 +4104,33 @@ void GameManager::loadJsonFile(std::string projectFilePath)
 #ifdef USE_PRELOAD_TEX
 		ProjectLoadingManager::getInstance()->preparePreloadTex(doc, projectPath);
 #endif
-		auto project = agtk::data::ProjectData::create(doc, projectPath);
+		PGMMV_STAGE_TRACE("GM_BEFORE_PROJECTDATA_CREATE");
+    auto project = agtk::data::ProjectData::create(doc, projectPath);
+    PGMMV_STAGE_TRACE("GM_AFTER_PROJECTDATA_CREATE");
 		CCLOG("[PGMMV-DIAG] create returned=%p", (void*)project);
-		this->setProjectData(project);
+		PGMMV_STAGE_TRACE("GM_BEFORE_SET_PROJECTDATA");
+    this->setProjectData(project);
+    PGMMV_STAGE_TRACE("GM_AFTER_SET_PROJECTDATA");
 		CCLOG("[PGMMV-DIAG] after set=%p", (void*)this->getProjectData());
 	}
 
 	//playData
-	auto playData = agtk::data::PlayData::create(this->getProjectData());
+	PGMMV_STAGE_TRACE("GM_BEFORE_PLAYDATA_CREATE");
+    auto playData = agtk::data::PlayData::create(this->getProjectData());
+    PGMMV_STAGE_TRACE("GM_AFTER_PLAYDATA_CREATE");
 	this->setPlayData(playData);
-	updateFileExistSwitch();
+	PGMMV_STAGE_TRACE("GM_BEFORE_FILE_EXIST_SWITCH");
+    updateFileExistSwitch();
+    PGMMV_STAGE_TRACE("GM_AFTER_FILE_EXIST_SWITCH");
 
 #if 0//TODO セーブ保留。
 	playData->save();
 #endif
 
 	// 設定データ読み込み
-	loadConfig();
+	PGMMV_STAGE_TRACE("GM_BEFORE_LOAD_CONFIG");
+    loadConfig();
+    PGMMV_STAGE_TRACE("GM_AFTER_LOAD_CONFIG");
 
 }
 
@@ -4197,11 +4220,14 @@ void GameManager::startProjectData(int sceneId)
 	auto inputManager = InputManager::getInstance();
 	inputManager->setInputMappingData(projectData->getInputMapping());
 	agtk::setTileCollisionThreshold(projectData->getWallDetectionOverlapMargin());
+	#ifdef USE_MULTITHREAD_OBJECT_UPDATE
+	// PGMMV_SINGLE_THREAD_SKIP_THREAD_CONFIG_V1
 	if (projectData->getMultithreading()) {
 		ThreadManager::setUsedThreadCount(MAX(1, MIN(2, AGTK_THREAD_COUNT)));
 	} else {
 		ThreadManager::setUsedThreadCount(1);
 	}
+	#endif // USE_MULTITHREAD_OBJECT_UPDATE
 
 #ifdef USE_PLUGIN
 #if 1
@@ -4338,6 +4364,15 @@ void GameManager::startProjectData(int sceneId)
 
 	//サウンドをすべてストップする。
 	auto audioManager = AudioManager::getInstance()->getInstance();
+	#ifdef __EMSCRIPTEN__
+	// WASM-GM-AUDIOMANAGER-INIT-V2
+	{
+	    auto wasmSoundSetting = projectData
+	        ? projectData->getSoundSetting() : nullptr;
+	    bool wasmAudioInitOK =
+	        audioManager->init(wasmSoundSetting);
+	}
+	#endif
 	audioManager->stopAllBgmNonObject();
 	audioManager->stopAllSe();
 	audioManager->stopAllVoice();
@@ -4540,6 +4575,15 @@ void GameManager::restartProjectData()
 
 	//サウンドをすべて停止する。
 	auto audioManager = AudioManager::getInstance()->getInstance();
+	#ifdef __EMSCRIPTEN__
+	// WASM-GM-AUDIOMANAGER-INIT-V2
+	{
+	    auto wasmSoundSetting = projectData
+	        ? projectData->getSoundSetting() : nullptr;
+	    bool wasmAudioInitOK =
+	        audioManager->init(wasmSoundSetting);
+	}
+	#endif
 	audioManager->stopAllBgmNonObject();
 	audioManager->stopAllSe();
 	audioManager->stopAllVoice();
@@ -4732,10 +4776,14 @@ void GameManager::updateSceneState()
 #ifdef USE_MULTITHREAD_UPDOWN_THREADS
 		if (getProjectData()->getMultithreading()) {
 			if (inputManager->isTriggeredKeyboard((int)EventKeyboard::KeyCode::KEY_PLUS)) {
+				#ifdef USE_MULTITHREAD_OBJECT_UPDATE
 				ThreadManager::changeUsedThreadCount(1);
+				#endif // USE_MULTITHREAD_OBJECT_UPDATE
 			}
 			if (inputManager->isTriggeredKeyboard((int)EventKeyboard::KeyCode::KEY_MINUS)) {
+				#ifdef USE_MULTITHREAD_OBJECT_UPDATE
 				ThreadManager::changeUsedThreadCount(-1);
+				#endif // USE_MULTITHREAD_OBJECT_UPDATE
 			}
 		}
 #endif

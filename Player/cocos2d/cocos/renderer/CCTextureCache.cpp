@@ -212,12 +212,13 @@ void TextureCache::addImageAsync(const std::string &path, const std::function<vo
     }
 
     // lazy init
+#if !defined(__EMSCRIPTEN__)
     if (_loadingThread == nullptr)
     {
-        // create a new thread to load images
         _needQuit = false;
         _loadingThread = new (std::nothrow) std::thread(&TextureCache::loadImage, this);
     }
+#endif
 
     if (0 == _asyncRefCount)
     {
@@ -230,11 +231,31 @@ void TextureCache::addImageAsync(const std::string &path, const std::function<vo
     AsyncStruct *data =
       new (std::nothrow) AsyncStruct(fullpath, callback, callbackKey);
     
-    // add async struct into queue
+    // Preserve the normal response/callback pipeline.
     _asyncStructQueue.push_back(data);
+
+#if defined(__EMSCRIPTEN__)
+    data->loadSuccess =
+        data->image.initWithImageFileThreadSafe(data->filename);
+
+    if (data->loadSuccess &&
+        data->image.getFileType() == Image::Format::ETC &&
+        !s_etc1AlphaFileSuffix.empty())
+    {
+        auto alphaFile = data->filename + s_etc1AlphaFileSuffix;
+        if (FileUtils::getInstance()->isFileExist(alphaFile))
+            data->imageAlpha.initWithImageFileThreadSafe(alphaFile);
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(_responseMutex);
+        _responseQueue.push_back(data);
+    }
+#else
     std::unique_lock<std::mutex> ul(_requestMutex);
     _requestQueue.push_back(data);
     _sleepCondition.notify_one();
+#endif
 }
 
 void TextureCache::unbindImageAsync(const std::string& callbackKey)
