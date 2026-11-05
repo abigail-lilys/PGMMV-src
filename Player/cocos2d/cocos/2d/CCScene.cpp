@@ -235,9 +235,9 @@ void Scene::render(Renderer* renderer, const Mat4* eyeTransforms, const Mat4* ey
         }
 #endif
 
+
         renderer->render();
         camera->restore();
-
         for (unsigned int i = 0; i < multiViewCount; ++i)
             director->popProjectionMatrix(i);
 
@@ -264,8 +264,8 @@ void Scene::render(Renderer* renderer, const Mat4* eyeTransforms, const Mat4* ey
         physics3dDebugCamera->clearBackground();
 
         _physics3DWorld->debugDraw(renderer);
-        renderer->render();
         
+        renderer->render();
         physics3dDebugCamera->restore();
 
         for (unsigned int i = 0; i < multiViewCount; ++i)

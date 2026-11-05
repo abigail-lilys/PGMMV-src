@@ -43,6 +43,9 @@ THE SOFTWARE.
 #include "base/ccUTF8.h"
 #include "2d/CCCamera.h"
 #include "platform/CCImage.h"
+#if (CC_TARGET_PLATFORM == CC_PLATFORM_EMSCRIPTEN)
+#include <emscripten.h>
+#endif
 
 #ifdef USE_AGTK
 static bool sUpdateSwapInterval = false;
@@ -135,6 +138,123 @@ private:
 #endif
 
 GLViewImpl* GLFWEventHandler::_view = nullptr;
+
+#if (CC_TARGET_PLATFORM == CC_PLATFORM_EMSCRIPTEN)
+// PGMMV_WASM_CSS_RESIZE_BRIDGE_V1
+static GLFWwindow* s_pgmmvWasmResizeWindow = nullptr;
+
+extern "C" EMSCRIPTEN_KEEPALIVE
+void pgmmv_set_window_size_from_css(int width, int height)
+{
+    if (!s_pgmmvWasmResizeWindow ||
+        width < 1 || height < 1 ||
+        width > 16384 || height > 16384)
+        return;
+
+    int currentWidth = 0;
+    int currentHeight = 0;
+    glfwGetWindowSize(
+        s_pgmmvWasmResizeWindow,
+        &currentWidth,
+        &currentHeight
+    );
+
+    if (currentWidth == width && currentHeight == height)
+        return;
+
+    CCLOG("[PGMMV-WASM-RESIZE] CSS %dx%d -> GLFW %dx%d",
+          width, height, currentWidth, currentHeight);
+
+    glfwSetWindowSize(s_pgmmvWasmResizeWindow, width, height);
+}
+
+EM_JS(void, pgmmv_install_canvas_resize_observer, (), {
+    var canvas = document.getElementById('canvas') || Module['canvas'];
+    if (!canvas) {
+        console.warn('[PGMMV-WASM-RESIZE] canvas not found');
+        return;
+    }
+    if (Module['__pgmmvCanvasResizeInstalled']) return;
+    Module['__pgmmvCanvasResizeInstalled'] = true;
+
+    var queued = false;
+    var lastWidth = 0;
+    var lastHeight = 0;
+    var resizeTarget = canvas.parentElement || canvas;
+
+    function applyCanvasCssSize() {
+        queued = false;
+
+        var rect = resizeTarget.getBoundingClientRect();
+        var width = Math.round(rect.width);
+        var height = Math.round(rect.height);
+
+        if (!Number.isFinite(width) || !Number.isFinite(height) ||
+            width < 1 || height < 1 ||
+            width > 16384 || height > 16384) {
+            return;
+        }
+
+        if (width === lastWidth && height === lastHeight)
+            return;
+
+        var resizeNative = Module['_pgmmv_set_window_size_from_css'];
+        if (typeof resizeNative !== 'function') {
+            console.error(
+                '[PGMMV-WASM-RESIZE] native resize bridge missing'
+            );
+            return;
+        }
+
+        lastWidth = width;
+        lastHeight = height;
+        resizeNative(width, height);
+
+        var canvasRect = canvas.getBoundingClientRect();
+        console.log(
+            '[PGMMV-WASM-RESIZE] container=' + width + 'x' + height +
+            ' canvas=' + Math.round(canvasRect.width) + 'x' +
+            Math.round(canvasRect.height) +
+            ' viewport=' + window.innerWidth + 'x' + window.innerHeight
+        );
+    }
+
+    function scheduleCanvasResize() {
+        if (queued) return;
+        queued = true;
+        window.requestAnimationFrame(applyCanvasCssSize);
+    }
+
+    var observer = null;
+
+    if (typeof ResizeObserver === 'function') {
+        observer = new ResizeObserver(scheduleCanvasResize);
+        observer.observe(resizeTarget);
+    } else {
+        console.warn(
+            '[PGMMV-WASM-RESIZE] ResizeObserver unavailable'
+        );
+    }
+
+    window.addEventListener(
+        'resize', scheduleCanvasResize, { passive: true }
+    );
+    window.addEventListener(
+        'orientationchange', scheduleCanvasResize, { passive: true }
+    );
+
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener(
+            'resize', scheduleCanvasResize, { passive: true }
+        );
+    }
+
+    Module['__pgmmvCanvasResizeObserver'] = observer;
+    Module['__pgmmvCanvasResizeHandler'] = scheduleCanvasResize;
+
+    scheduleCanvasResize();
+});
+#endif
 
 const std::string GLViewImpl::EVENT_WINDOW_RESIZED = "glview_window_resized";
 const std::string GLViewImpl::EVENT_WINDOW_FOCUSED = "glview_window_focused";
@@ -319,6 +439,10 @@ GLViewImpl::GLViewImpl(bool initglfw)
 GLViewImpl::~GLViewImpl()
 {
     CCLOGINFO("deallocing GLViewImpl: %p", this);
+#if (CC_TARGET_PLATFORM == CC_PLATFORM_EMSCRIPTEN)
+    if (s_pgmmvWasmResizeWindow == _mainWindow)
+        s_pgmmvWasmResizeWindow = nullptr;
+#endif
     GLFWEventHandler::setGLViewImpl(nullptr);
     glfwTerminate();
 }
@@ -440,6 +564,10 @@ bool GLViewImpl::initWithRect(const std::string& viewName, Rect rect, float fram
     glfwSetWindowIconifyCallback(_mainWindow, GLFWEventHandler::onGLFWWindowIconifyCallback);
     glfwSetWindowFocusCallback(_mainWindow, GLFWEventHandler::onGLFWWindowFocusCallback);
 
+#if (CC_TARGET_PLATFORM == CC_PLATFORM_EMSCRIPTEN)
+    s_pgmmvWasmResizeWindow = _mainWindow;
+#endif
+
     setFrameSize(rect.size.width, rect.size.height);
 
 #if (CC_TARGET_PLATFORM != CC_PLATFORM_EMSCRIPTEN) // clang-fix
@@ -472,6 +600,10 @@ bool GLViewImpl::initWithRect(const std::string& viewName, Rect rect, float fram
 //    // GLFW v3.2 no longer emits "onGLFWWindowSizeFunCallback" at creation time. Force default viewport:
 //    setViewPortInPoints(0, 0, neededWidth, neededHeight);
 //
+#if (CC_TARGET_PLATFORM == CC_PLATFORM_EMSCRIPTEN)
+    pgmmv_install_canvas_resize_observer();
+#endif
+
     return true;
 }
 

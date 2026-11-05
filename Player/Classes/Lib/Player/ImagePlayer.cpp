@@ -1,4 +1,5 @@
-﻿#include "ImagePlayer.h"
+﻿#include "DynamicFpsProbe.h"
+#include "ImagePlayer.h"
 #include "Manager/PrimitiveManager.h"
 #include "Manager/GameManager.h"
 

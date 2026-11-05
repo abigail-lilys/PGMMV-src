@@ -1,4 +1,5 @@
-﻿#include "GifPlayer.h"
+﻿#include "DynamicFpsProbe.h"
+#include "GifPlayer.h"
 #include "PrimitiveManager.h"
 #include "GameManager.h"
 
@@ -590,8 +591,11 @@ void GifPlayer::updateGif(float dt)
 
 	bool ret = animation->update(dt);
 	if (ret || oldFrame != frame || _updateGifFirstFlag) {
-		auto bitmap = animation->getBitmap();
+		auto bitmap = [&]() {
+			return animation->getBitmap();
+		}();
 		cocos2d::Size contentSize(bitmap->getWidth(), bitmap->getHeight());
+		{
 		auto texture = new Texture2D();
 		texture->initWithData(
 			bitmap->getAddr(),
@@ -605,6 +609,7 @@ void GifPlayer::updateGif(float dt)
 		this->setTexture(texture);
 		if (textureOld) {
 			textureOld->release();
+		}
 		}
 		_updateGifFirstFlag = false;
 	}

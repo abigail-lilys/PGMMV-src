@@ -1,4 +1,5 @@
 ﻿#include "Lib/Macros.h"
+namespace js { void DisableExtraThreads(); }
 #include "AudioManager.h"
 #include "GameManager.h"
 #include "InputManager.h"
@@ -168,6 +169,7 @@ bool JavascriptManager::init(unsigned int maxbytes, unsigned int stackChunkSize)
 		return true;
 	}
 	JS_Init();
+	js::DisableExtraThreads();
 	_runtime = JS_NewRuntime(maxbytes);
 	if(!_runtime){
 		return false;

@@ -189,9 +189,17 @@ void RenderQueue::realloc(size_t reserveSize)
 
 void RenderQueue::saveRenderState()
 {
+#if defined(__EMSCRIPTEN__)
+    auto wasmState = RenderState::StateBlock::_defaultState;
+    CCASSERT(wasmState, "Default render state is not initialized");
+    _isDepthEnabled = wasmState->_depthTestEnabled;
+    _isCullEnabled = wasmState->_cullFaceEnabled;
+    _isDepthWrite = wasmState->_depthWriteEnabled ? GL_TRUE : GL_FALSE;
+#else
     _isDepthEnabled = glIsEnabled(GL_DEPTH_TEST) != GL_FALSE;
     _isCullEnabled = glIsEnabled(GL_CULL_FACE) != GL_FALSE;
     glGetBooleanv(GL_DEPTH_WRITEMASK, &_isDepthWrite);
+#endif
     
     CHECK_GL_ERROR_DEBUG();
 }
@@ -221,7 +229,7 @@ void RenderQueue::restoreRenderState()
     }
     
     glDepthMask(_isDepthWrite);
-    RenderState::StateBlock::_defaultState->setDepthWrite(_isDepthEnabled);
+RenderState::StateBlock::_defaultState->setDepthWrite(_isDepthWrite != GL_FALSE);
 
     CHECK_GL_ERROR_DEBUG();
 }
@@ -243,6 +251,9 @@ Renderer::Renderer()
 ,_glViewAssigned(false)
 ,_isRendering(false)
 ,_isDepthTestFor2D(false)
+#if defined(__EMSCRIPTEN__)
+,_wasmRenderStateSynced(false)
+#endif
 #if CC_ENABLE_CACHE_TEXTURE_DATA
 ,_cacheTextureListener(nullptr)
 #endif
@@ -300,6 +311,9 @@ void Renderer::initGLView()
 
 void Renderer::setupBuffer()
 {
+#if defined(__EMSCRIPTEN__)
+    _wasmRenderStateSynced = false;
+#endif
     if(Configuration::getInstance()->supportsShareableVAO())
     {
         setupVBOAndVAO();
@@ -685,19 +699,39 @@ void Renderer::render()
     //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     //TODO: setup camera or MVP
+#if defined(__EMSCRIPTEN__)
+    if (!_wasmRenderStateSynced)
+    {
+        auto wasmState = RenderState::StateBlock::_defaultState;
+        if (wasmState)
+        {
+            GLboolean wasmDepthWrite = GL_FALSE;
+            wasmState->setDepthTest(glIsEnabled(GL_DEPTH_TEST) != GL_FALSE);
+            wasmState->setCullFace(glIsEnabled(GL_CULL_FACE) != GL_FALSE);
+            glGetBooleanv(GL_DEPTH_WRITEMASK, &wasmDepthWrite);
+            wasmState->setDepthWrite(wasmDepthWrite != GL_FALSE);
+            _wasmRenderStateSynced = true;
+        }
+    }
+#endif
+
     _isRendering = true;
     
     if (_glViewAssigned)
     {
         //Process render commands
         //1. Sort render commands based on ID
-        for (auto &renderqueue : _renderGroups)
         {
-            renderqueue.sort();
+            for (auto &renderqueue : _renderGroups)
+            {
+                renderqueue.sort();
+            }
         }
         visitRenderQueue(_renderGroups[0]);
     }
-    clean();
+    {
+        clean();
+    }
     _isRendering = false;
 }
 

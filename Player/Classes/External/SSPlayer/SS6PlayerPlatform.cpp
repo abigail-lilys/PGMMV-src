@@ -2,6 +2,9 @@
 //  SS6Platform.cpp
 //
 #include "SS6PlayerPlatform.h"
+#if defined(__EMSCRIPTEN__)
+#include "renderer/CCRenderState.h"
+#endif
 
 /**
 * 各プラットフォームに合わせて処理を作成してください
@@ -389,6 +392,10 @@ namespace ss
 
 		glEnable(GL_BLEND);
 		glDisable(GL_DEPTH_TEST);
+#if defined(__EMSCRIPTEN__)
+        if (cocos2d::RenderState::StateBlock::_defaultState)
+            cocos2d::RenderState::StateBlock::_defaultState->setDepthTest(false);
+#endif
 
 		_currentStencilEnabled = glIsEnabled(GL_STENCIL_TEST);
 #if OPENGLES20

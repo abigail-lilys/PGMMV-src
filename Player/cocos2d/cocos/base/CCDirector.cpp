@@ -292,8 +292,10 @@ void Director::drawScene()
         _eventDispatcher->dispatchEvent(_eventAfterUpdate);
     }
 
+    {
     _renderer->clear();
     experimental::FrameBuffer::clearAllFBOs();
+    }
     
     _eventDispatcher->dispatchEvent(_eventBeforeDraw);
     
@@ -320,7 +322,9 @@ void Director::drawScene()
         
         //render the scene
         if(_openGLView)
+        {
             _openGLView->renderScene(_runningScene, _renderer);
+        }
         
         _eventDispatcher->dispatchEvent(_eventAfterVisit);
     }
@@ -353,9 +357,13 @@ void Director::drawScene()
 		_eventDispatcher->dispatchEvent(_eventAfterDraw);
 	}
 #else
-    _renderer->render();
+    {
+        _renderer->render();
+    }
 
-    _eventDispatcher->dispatchEvent(_eventAfterDraw);
+    {
+        _eventDispatcher->dispatchEvent(_eventAfterDraw);
+    }
 #endif
 
     popMatrix(MATRIX_STACK_TYPE::MATRIX_STACK_MODELVIEW);

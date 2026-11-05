@@ -2295,9 +2295,7 @@ bool InputController::init(int id, agtk::data::InputMappingData *inputMappingDat
 	CC_ASSERT(inputMappingData);
 	CC_ASSERT(inputDataRaw);
 	this->setId(id);
-	printf("[wasm-port] probe_im_init: before setInputMappingData\n"); fflush(stdout);
 	this->setInputMappingData(inputMappingData);
-	printf("[wasm-port] probe_im_init: after setInputMappingData\n"); fflush(stdout);
 	this->setInputDataRaw(inputDataRaw);
 	this->setController(kControllerNone);
 	return true;
@@ -3555,13 +3553,8 @@ void InputManager::purge()
 
 bool InputManager::init(agtk::data::InputMappingData *inputMappingData)
 {
-	printf("[wasm-port] probe_im_init: START\n"); fflush(stdout);
-	printf("[wasm-port] probe_im_init: before setInputMappingData\n"); fflush(stdout);
 	this->setInputMappingData(inputMappingData);
-	printf("[wasm-port] probe_im_init: after setInputMappingData\n"); fflush(stdout);
-	printf("[wasm-port] probe_im_init: before InputDataRaw::create\n"); fflush(stdout);
 	auto inputDataRaw = InputDataRaw::create();
-	printf("[wasm-port] probe_im_init: after InputDataRaw::create\n"); fflush(stdout);
 	if (inputDataRaw == nullptr) {
 		CC_ASSERT(0);
 		return false;
@@ -3575,9 +3568,7 @@ bool InputManager::init(agtk::data::InputMappingData *inputMappingData)
 		return false;
 	}
 	for (int i = 0; i <= 0; i++) { // [wasm-port] 限制只初始化 0 (PC键盘) 避免手柄 API 死锁
-		printf("[wasm-port] probe_im_init: before InputController::create(%d)\n", i); fflush(stdout);
 		auto controller = InputController::create(i, inputMappingData, inputDataRaw);
-		printf("[wasm-port] probe_im_init: after InputController::create(%d)\n", i); fflush(stdout);
 		if (controller == nullptr) {
 			CC_ASSERT(0);
 			return false;
@@ -3597,7 +3588,6 @@ bool InputManager::init(agtk::data::InputMappingData *inputMappingData)
 		return false;
 	}
 	this->setSelectInputControllerList(selectInputControllerList);
-	printf("[wasm-port] probe_im_init: END\n"); fflush(stdout);
 
 	return true;
 }

@@ -1,4 +1,5 @@
-﻿#include "Player.h"
+﻿#include "Player/DynamicFpsProbe.h"
+#include "Player.h"
 #include "Manager/GameManager.h"
 #include "Manager/DebugManager.h"
 
@@ -20,6 +21,77 @@ extern int roughHitCollisionCount;
 #endif
 NS_AGTK_BEGIN
 
+
+#if defined(__EMSCRIPTEN__)
+namespace dynamic_fps_probe {
+struct Stat { std::uint64_t calls; std::uint64_t totalNs; std::uint64_t maxNs; };
+static Stat g_stats[static_cast<unsigned int>(Bucket::Count)] = {};
+static std::chrono::steady_clock::time_point g_windowStart = std::chrono::steady_clock::now();
+static const char* g_names[] = {
+    "SceneLayer", "Player", "PlayerTraversal", "PlayerNodeVisits",
+    "ImagePlayer", "GifPlayer", "GifFrameSeek", "GifAnimationAdvance",
+    "GifBitmapGet", "GifTextureUpload", "SSPlayer", "AnimationMotion",
+    "PlayerTail", "PlayerCenter", "PlayerActionSprites",
+    "PlayerRenderTexture", "PlayerShaderCleanup",
+    "DirectorDrawScene", "DirectorPollEvents", "DirectorScheduleUpdate",
+    "DirectorClear", "DirectorSceneVisit", "DirectorNotificationVisit",
+    "DirectorRendererRender", "DirectorAfterDraw", "DirectorSwapBuffers",
+    "SceneRender", "NodeVisitCount", "NodeSort", "NodeSortActual",
+    "NodeProcessFlags", "NodeBaseDraw", "SpriteDraw",
+    "NodeVisitExclusive", "NodeVirtualDraw", "NodeVirtualDrawCount",
+    "NodeVisitMatrix", "NodeVisitCameraCheck",
+    "SceneCameraApply", "SceneCameraClear", "SceneNodeVisit", "SceneCameraRenderer", "SceneCameraRestore", "RendererQueueSort", "RenderQueueSortOne", "RendererVisitQueue", "RendererClean", "RenderQueueSaveState", "RenderQueueRestoreState", "RenderQueueCommandCount", "RendererTriangleBatch", "RendererFlush", "CameraViewportApply", "CameraViewportRestore"
+};
+
+void record(Bucket bucket, std::uint64_t ns) noexcept {
+    const auto i = static_cast<unsigned int>(bucket);
+    if (i >= static_cast<unsigned int>(Bucket::Count)) return;
+    auto& s = g_stats[i];
+    ++s.calls;
+    s.totalNs += ns;
+    if (ns > s.maxNs) s.maxNs = ns;
+}
+
+void count(Bucket bucket) noexcept { record(bucket, 0); }
+
+static thread_local ScopedExclusiveTimer* g_activeExclusiveTimer = nullptr;
+
+ScopedExclusiveTimer::ScopedExclusiveTimer(Bucket bucket) noexcept
+    : _bucket(bucket), _start(std::chrono::steady_clock::now()),
+      _childNs(0), _parent(g_activeExclusiveTimer) {
+    g_activeExclusiveTimer = this;
+}
+
+ScopedExclusiveTimer::~ScopedExclusiveTimer() noexcept {
+    const auto elapsedSigned = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now() - _start).count();
+    const std::uint64_t elapsedNs = elapsedSigned > 0 ? static_cast<std::uint64_t>(elapsedSigned) : 0;
+    const std::uint64_t exclusiveNs = elapsedNs > _childNs ? elapsedNs - _childNs : 0;
+    record(_bucket, exclusiveNs);
+    g_activeExclusiveTimer = _parent;
+    if (_parent) _parent->_childNs += elapsedNs;
+}
+
+void reportIfDue() noexcept {
+    const auto now = std::chrono::steady_clock::now();
+    const auto elapsedNs = std::chrono::duration_cast<std::chrono::nanoseconds>(now - g_windowStart).count();
+    if (elapsedNs < 1000000000LL) return;
+    cocos2d::log("[DYNFPS] window=%.0fms (times below are inclusive and must not be summed)", elapsedNs / 1000000.0);
+    for (unsigned int i = 0; i < static_cast<unsigned int>(Bucket::Count); ++i) {
+        const auto s = g_stats[i];
+        if (!s.calls) continue;
+        cocos2d::log("[DYNFPS] %-19s calls=%llu total=%.3fms avg=%.4fms max=%.3fms",
+            g_names[i],
+            static_cast<unsigned long long>(s.calls),
+            s.totalNs / 1000000.0,
+            (s.totalNs / 1000000.0) / static_cast<double>(s.calls),
+            s.maxNs / 1000000.0);
+        g_stats[i] = {};
+    }
+    g_windowStart = now;
+}
+}
+#endif // __EMSCRIPTEN__
 //-------------------------------------------------------------------------------------------------------------------
 PlayerSprite::PlayerSprite()
 {
@@ -544,9 +616,10 @@ void Player::update(float dt)
 		}
 	}
 
+	{
 	//update node
 //#AGTK-NX #AGTK-WIN
-#ifdef USE_SAR_OPTIMIZE_1
+#if defined(USE_SAR_OPTIMIZE_1) || defined(__EMSCRIPTEN__)
 	struct NodeInfo
 	{
 		int		i;
@@ -621,7 +694,7 @@ void Player::update(float dt)
 	};
 	updateChildren(this);
 #endif
-
+	}
 	//remove shader
 	if (this->getRemoveShaderList()->count()) {
 		auto renderTextureCtrl = this->getRenderTexture();
@@ -649,11 +722,14 @@ void Player::update(float dt)
 	}
 
 	//update center position
-	this->getCenterNode()->update(dt);
+	{
+		this->getCenterNode()->update(dt);
+	}
 
 	//upper sprite
 	auto execActionSpriteList = this->getExecActionSpriteList();
 	cocos2d::Ref *ref;
+	{
 	CCARRAY_FOREACH(execActionSpriteList, ref) {
 // #AGTK-NX
 #ifdef STATIC_DOWN_CAST
@@ -670,6 +746,7 @@ void Player::update(float dt)
 		}
 	}
 
+	}
 	// update renderTexture
 	auto renderTexture = this->getRenderTexture();
 	if (renderTexture) {

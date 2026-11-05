@@ -25,6 +25,7 @@
 #define LOG_TAG "AudioEngine-Win32"
 
 #include "platform/CCPlatformConfig.h"
+#include <stdio.h>
 
 #if (CC_TARGET_PLATFORM == CC_PLATFORM_WIN32) || (CC_TARGET_PLATFORM == CC_PLATFORM_EMSCRIPTEN) // [wasm-port] audio impl guard
 
@@ -152,9 +153,13 @@ AudioEngineImpl::~AudioEngineImpl()
 
 bool AudioEngineImpl::init()
 {
+
+
 	bool ret = false;
     do{
         s_ALDevice = alcOpenDevice(nullptr);
+    
+
 
 		if (s_ALDevice) {
             alGetError();
@@ -162,7 +167,11 @@ bool AudioEngineImpl::init()
 #define USE_AGTK_STEREO_PAN
 #endif
             s_ALContext = alcCreateContext(s_ALDevice, nullptr);
+    
+
             alcMakeContextCurrent(s_ALContext);
+    
+
 
             alGenSources(MAX_AUDIOINSTANCES, _alSources);
             auto alError = alGetError();
@@ -193,8 +202,23 @@ bool AudioEngineImpl::init()
 void AudioEngineImpl::finalize(bool cacheClear)
 {
 	
-	if (s_ALContext) {
-		alDeleteSources(MAX_AUDIOINSTANCES, _alSources);
+if (s_ALContext) {
+#if defined(__EMSCRIPTEN__) && defined(USE_AGTK)
+        _threadMutex.lock();
+        for (auto& entry : _audioPlayers)
+        {
+            AudioPlayer* player = entry.second;
+            if (player != nullptr)
+            {
+                player->destroy();
+                delete player;
+            }
+        }
+        _audioPlayers.clear();
+        _threadMutex.unlock();
+#endif
+
+alDeleteSources(MAX_AUDIOINSTANCES, _alSources);
 
 		if (cacheClear) {
 			_audioCaches.clear();
@@ -309,6 +333,13 @@ int AudioEngineImpl::play2d(const std::string &filePath ,bool loop ,float volume
 	}
 #endif
 
+#ifdef __EMSCRIPTEN__
+    {
+        static unsigned int gainEngineCount = 0;
+        if (gainEngineCount++ < 80) {
+        }
+    }
+#endif
     auto audioCache = preload(filePath, nullptr);
     if (audioCache == nullptr) {
         delete player;
@@ -391,6 +422,14 @@ void AudioEngineImpl::setVolume(int audioID,float volume)
     auto player = _audioPlayers[audioID];
     if (!player) return; // WASM_AUDIO_CRASH_FIX
     player->_volume = volume;
+#ifdef __EMSCRIPTEN__
+    {
+        static unsigned int gainSetVolumeCount = 0;
+        if (gainSetVolumeCount++ < 80) {
+        }
+    }
+#endif
+
 
     if (player->_ready) {
 #ifdef USE_AGTK_STEREO_PAN
@@ -453,6 +492,14 @@ void AudioEngineImpl::setPan(int audioID, float *pan)
 	auto player = _audioPlayers[audioID];
     if (!player) return; // WASM_AUDIO_CRASH_FIX
 	memcpy(player->_pan, pan, sizeof(player->_pan));
+#ifdef __EMSCRIPTEN__
+        {
+            static unsigned int gainSetPanCount = 0;
+            if (gainSetPanCount++ < 80) {
+            }
+        }
+#endif
+
 
 	if (player->_ready) {
 #ifdef USE_AGTK_STEREO_PAN
@@ -753,6 +800,9 @@ void AudioEngineImpl::setFinishCallback(int audioID, const std::function<void (i
 
 void AudioEngineImpl::update(float dt)
 {
+
+    static unsigned int diagEngineTick = 0;
+
 	ALint sourceState;
     int audioID;
     AudioPlayer* player;
@@ -764,11 +814,24 @@ void AudioEngineImpl::update(float dt)
         audioID = it->first;
         player = it->second;
         alSource = player->_alSource;
+#if defined(__EMSCRIPTEN__) && defined(USE_AGTK)
+        if (!player->_removeByAudioEngine && player->_streamingSource)
+        {
+            player->updateWasmStream();
+        
+static unsigned int diagDispatch = 0;
+
+        }
+#endif
 #ifdef USE_AGTK_STEREO_PAN
-		auto alSource2 = player->_alSource2;
+auto alSource2 = player->_alSource2;
 #endif
         alGetSourcei(alSource, AL_SOURCE_STATE, &sourceState);
 
+        bool wasmStreamPending = false;
+#if defined(__EMSCRIPTEN__) && defined(USE_AGTK)
+        wasmStreamPending = player->_streamingSource && player->_wasmInitialized;
+#endif
         if (player->_removeByAudioEngine)
         {
 			AudioEngine::remove(audioID);
@@ -783,7 +846,7 @@ void AudioEngineImpl::update(float dt)
 			}
 #endif
 		}
-        else if (player->_ready && sourceState == AL_STOPPED) {
+        else if (player->_ready && sourceState == AL_STOPPED && !wasmStreamPending) {
 #ifdef USE_AGTK
 			// ソースにバインドされたままの可能性があるのでプレイヤーを開放する前にアンバインドを行う
 			alSourcei(alSource, AL_BUFFER, NULL);

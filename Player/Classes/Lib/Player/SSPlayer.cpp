@@ -1,4 +1,5 @@
-﻿#include "SSPlayer.h"
+﻿#include "DynamicFpsProbe.h"
+#include "SSPlayer.h"
 #include "InputManager.h"
 #include "GameManager.h"
 

@@ -275,6 +275,9 @@ protected:
     bool _isRendering;
     
     bool _isDepthTestFor2D;
+#if defined(__EMSCRIPTEN__)
+    bool _wasmRenderStateSynced;
+#endif
     
     GroupCommandManager* _groupCommandManager;
     

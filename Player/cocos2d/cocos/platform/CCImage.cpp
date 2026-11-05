@@ -530,6 +530,12 @@ ImageMtTask* ImageMtTask::getInstance()
 
 void ImageMtTask::addTask(ImageTask& imageTask)
 {
+	/* PGMMV_EMSCRIPTEN_SINGLE_THREAD_IMAGE_GUARD_V2 */
+	/* Emscripten target is single-threaded: always use the synchronous image path. */
+#if defined(__EMSCRIPTEN__)
+	_modeAsync = false;
+#endif
+
 	if (_modeAsync) {
 		if (!_t1) {
 			_reqExit = false;
@@ -663,10 +669,10 @@ void ImageMtTask::imageSetupCallBack(float /*dt*/)
 void ImageMtTask::join()
 {
 	_reqExit = true;
-	if (_t1->joinable()) {
+	if (_t1 && _t1->joinable()) {
 		_t1->join();
 	}
-	if (_t2->joinable()) {
+	if (_t2 && _t2->joinable()) {
 		_t2->join();
 	}
 

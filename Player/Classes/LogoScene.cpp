@@ -527,12 +527,15 @@ void LogoScene::ApplyProjectData()
 	auto inputManager = InputManager::getInstance();
 	inputManager->setInputMappingData(projectData->getInputMapping());
 	agtk::setTileCollisionThreshold(projectData->getWallDetectionOverlapMargin());
+	#ifdef USE_MULTITHREAD_OBJECT_UPDATE
+	// PGMMV_SINGLE_THREAD_SKIP_THREAD_CONFIG_V1
 	if (projectData->getMultithreading()) {
 		ThreadManager::setUsedThreadCount(MAX(1, MIN(2, AGTK_THREAD_COUNT)));
 	}
 	else {
 		ThreadManager::setUsedThreadCount(1);
 	}
+	#endif // USE_MULTITHREAD_OBJECT_UPDATE
 
 // #AGTK-NX
 #if (CC_TARGET_PLATFORM == CC_PLATFORM_NX)

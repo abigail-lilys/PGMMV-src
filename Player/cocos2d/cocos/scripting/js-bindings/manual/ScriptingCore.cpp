@@ -23,6 +23,7 @@
  * THE SOFTWARE.
  */
 
+namespace js { void DisableExtraThreads(); }
 #include "scripting/js-bindings/manual/ScriptingCore.h"
 
 // Removed in Firefox v27, use 'js/OldDebugAPI.h' instead
@@ -580,11 +581,22 @@ bool ScriptingCore::evalString(const char *string)
     return evalString(string, &retVal);
 }
 
+// PGMMV_SC_TRACE_V1
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#define PGMMV_SC_TRACE(message) EM_ASM({ if (typeof Module !== "undefined" && Module.pgmmv && Module.pgmmv.trace) Module.pgmmv.trace(UTF8ToString($0)); }, message)
+#define PGMMV_SC_TRACE_VALUE_V1(message, value) EM_ASM({ if (typeof Module !== "undefined" && Module.pgmmv && Module.pgmmv.trace) Module.pgmmv.trace(UTF8ToString($0) + "_" + $1); }, message, (int)(value))
+#else
+#define PGMMV_SC_TRACE(message) ((void)0)
+#endif
+
 void ScriptingCore::start()
 {
+    PGMMV_SC_TRACE("SC_START_ENTER");
     _engineStartTime = std::chrono::steady_clock::now();
-    // for now just this
+    PGMMV_SC_TRACE("SC_START_BEFORE_CREATE_GLOBAL_CONTEXT");
     createGlobalContext();
+    PGMMV_SC_TRACE("SC_START_AFTER_CREATE_GLOBAL_CONTEXT");
 }
 
 void ScriptingCore::addRegisterCallback(sc_register_sth callback) {
@@ -632,7 +644,9 @@ static JSSecurityCallbacks securityCallbacks = {
 };
 
 void ScriptingCore::createGlobalContext() {
+    PGMMV_SC_TRACE("SC_CTX_ENTER");
     if (_cx && _rt) {
+        PGMMV_SC_TRACE("SC_BEFORE_OLD_CONTEXT_CLEANUP");
         ScriptingCore::removeAllRoots(_cx);
         JS_DestroyContext(_cx);
         JS_DestroyRuntime(_rt);
@@ -641,46 +655,104 @@ void ScriptingCore::createGlobalContext() {
     }
 
     // Start the engine. Added in SpiderMonkey v25
-    if (!_jsInited && !JS_Init())
+    if (!_jsInited)
     {
-        return;
+        PGMMV_SC_TRACE("SC_BEFORE_JS_INIT");
+        if (!JS_Init())
+        {
+            PGMMV_SC_TRACE("SC_JS_INIT_FAILED");
+            return;
+        }
+        PGMMV_SC_TRACE("SC_JS_INIT_SUCCEEDED");
+        _jsInited = true;
     }
     else
     {
-        _jsInited = true;
+        PGMMV_SC_TRACE("SC_JS_INIT_ALREADY_DONE");
     }
 
+    PGMMV_SC_TRACE("SC_BEFORE_NEW_RUNTIME");
+    js::DisableExtraThreads();
+    PGMMV_SC_TRACE("SC_EXTRA_THREADS_DISABLED");
     _rt = JS_NewRuntime(32L * 1024L * 1024L);
+    PGMMV_SC_TRACE("SC_AFTER_NEW_RUNTIME");
+
+    PGMMV_SC_TRACE("SC_BEFORE_SET_GC_PARAMETERS");
     JS_SetGCParameter(_rt, JSGCParamKey::JSGC_MAX_BYTES, 0xffffffff);
     JS_SetGCParameter(_rt, JSGCParamKey::JSGC_MODE, JSGC_MODE_COMPARTMENT);
+    PGMMV_SC_TRACE("SC_AFTER_SET_GC_PARAMETERS");
 
     JS_SetTrustedPrincipals(_rt, &shellTrustedPrincipals);
     JS_SetSecurityCallbacks(_rt, &securityCallbacks);
     JS_SetNativeStackQuota(_rt, JSB_MAX_STACK_QUOTA);
 
+    PGMMV_SC_TRACE("SC_BEFORE_NEW_CONTEXT");
     _cx = JS_NewContext(_rt, 32 * 1024);
+    PGMMV_SC_TRACE("SC_AFTER_NEW_CONTEXT");
 
+    PGMMV_SC_TRACE("SC_BEFORE_SET_ION");
     JS::RuntimeOptionsRef(_rt).setIon(true);
-    JS::RuntimeOptionsRef(_rt).setBaseline(true);
+    PGMMV_SC_TRACE("SC_AFTER_SET_ION");
 
+    PGMMV_SC_TRACE("SC_BEFORE_SET_BASELINE");
+    JS::RuntimeOptionsRef(_rt).setBaseline(true);
+    PGMMV_SC_TRACE("SC_AFTER_SET_BASELINE");
+
+    PGMMV_SC_TRACE("SC_BEFORE_SET_ERROR_REPORTER");
     JS_SetErrorReporter(_cx, ScriptingCore::reportError);
+    PGMMV_SC_TRACE("SC_AFTER_SET_ERROR_REPORTER");
 #if defined(JS_GC_ZEAL) && defined(DEBUG)
     JS_SetGCZeal(this->_cx, 2, JS_DEFAULT_ZEAL_FREQ);
 #endif
 
+    PGMMV_SC_TRACE("SC_BEFORE_SET_GC_CALLBACK");
     JS_SetGCCallback(_rt, onGarbageCollect, nullptr);
+    PGMMV_SC_TRACE("SC_AFTER_SET_GC_CALLBACK");
 
+    PGMMV_SC_TRACE("SC_BEFORE_NEW_GLOBAL_OBJECT");
     _global = new (std::nothrow) JS::PersistentRootedObject(_rt, newGlobalObject(_cx, false));
+    PGMMV_SC_TRACE("SC_AFTER_NEW_GLOBAL_OBJECT");
+
+    PGMMV_SC_TRACE("SC_BEFORE_ROOT_GLOBAL_OBJECT");
     JS::RootedObject global(_cx, _global->get());
+    PGMMV_SC_TRACE("SC_AFTER_ROOT_GLOBAL_OBJECT");
 
     // Removed in Firefox v34
     // js::SetDefaultObjectForContext(_cx, global); // [wasm-port] removed in SM34
 
-    runScript("script/jsb_prepare.js");
+    auto pgmmvGetCCClassState = [&]() -> int {
+        JS::RootedValue ccValue(_cx);
+        if (!JS_GetProperty(_cx, global, "cc", &ccValue)) return -1;
+        if (!ccValue.isObject()) return 0;
+        JS::RootedObject ccObject(_cx, ccValue.toObjectOrNull());
+        JS::RootedValue classValue(_cx);
+        if (!JS_GetProperty(_cx, ccObject, "Class", &classValue)) return -2;
+        if (classValue.isUndefined()) return 1;
+        if (classValue.isNull()) return 2;
+        if (classValue.isObject()) return 3;
+        if (classValue.isString()) return 4;
+        if (classValue.isBoolean()) return 5;
+        if (classValue.isNumber()) return 6;
+        return 7;
+    };
+    PGMMV_SC_TRACE("SC_BEFORE_JSB_PREPARE");
+    const bool pgmmvJsbPrepareOK = runScript("script/jsb_prepare.js");
+    PGMMV_SC_TRACE_VALUE_V1("SC_JSB_PREPARE_RESULT", pgmmvJsbPrepareOK ? 1 : 0);
 
+
+    PGMMV_SC_TRACE_VALUE_V1("SC_CC_CLASS_AFTER_PREPARE", pgmmvGetCCClassState());
+    PGMMV_SC_TRACE("SC_AFTER_JSB_PREPARE");
+
+    int pgmmvRegisterCallbackIndex = 0;
     for (auto& callback : registrationList) {
+        PGMMV_SC_TRACE_VALUE_V1("SC_REGISTER_CALLBACK_BEFORE", pgmmvRegisterCallbackIndex);
+        PGMMV_SC_TRACE_VALUE_V1("SC_CC_CLASS_BEFORE_CALLBACK", pgmmvGetCCClassState());
         callback(_cx, global);
+        PGMMV_SC_TRACE_VALUE_V1("SC_REGISTER_CALLBACK_AFTER", pgmmvRegisterCallbackIndex);
+        PGMMV_SC_TRACE_VALUE_V1("SC_CC_CLASS_AFTER_CALLBACK", pgmmvGetCCClassState());
+        ++pgmmvRegisterCallbackIndex;
     }
+    PGMMV_SC_TRACE_VALUE_V1("SC_REGISTER_CALLBACK_COUNT", pgmmvRegisterCallbackIndex);
     
     _needCleanup = true;
 }
@@ -703,20 +775,44 @@ JS::PersistentRootedScript* ScriptingCore::getScript(const std::string& path)
         return filename_script[byteCodePath];
 
     // b) no jsc file, check js file
+    PGMMV_SC_TRACE("SC_AGTK_GETSCRIPT_BEFORE_FULLPATH");
     std::string fullPath = cocos2d::FileUtils::getInstance()->fullPathForFilename(path);
+    PGMMV_SC_TRACE("SC_AGTK_GETSCRIPT_AFTER_FULLPATH");
     if (filename_script.find(fullPath) != filename_script.end())
         return filename_script[fullPath];
 
     return nullptr;
 }
 
+// Own exceptional JS source buffers until the JS runtime is gone.
+static std::vector<std::string*>& pgmmvRetainedJsSources() {
+    static std::vector<std::string*> sources;
+    return sources;
+}
+
+static void pgmmvRetainJsSource(std::string& source) {
+    std::string* retained = new std::string();
+    retained->swap(source);
+    pgmmvRetainedJsSources().push_back(retained);
+}
+
+static void pgmmvReleaseRetainedJsSources() {
+    std::vector<std::string*>& sources = pgmmvRetainedJsSources();
+    for (std::vector<std::string*>::iterator it = sources.begin();
+         it != sources.end(); ++it) {
+        delete *it;
+    }
+    sources.clear();
+}
 JS::PersistentRootedScript* ScriptingCore::compileScript(const std::string& path, JS::HandleObject global, JSContext* cx)
 {
     if (path.empty()) {
         return nullptr;
     }
 
+    PGMMV_SC_TRACE("SC_AGTK_BEFORE_GETSCRIPT");
     JS::PersistentRootedScript* script = getScript(path);
+    PGMMV_SC_TRACE("SC_AGTK_AFTER_GETSCRIPT");
     if (script != nullptr) {
         return script;
     }
@@ -739,12 +835,19 @@ JS::PersistentRootedScript* ScriptingCore::compileScript(const std::string& path
     std::string byteCodePath = RemoveFileExt(std::string(path)) + BYTE_CODE_FILE_EXT;
 
     // Check whether '.jsc' files exist to avoid outputting log which says 'couldn't find .jsc file'.
-    if (futil->isFileExist(byteCodePath))
+    PGMMV_SC_TRACE("SC_AGTK_BEFORE_JSC_EXISTS");
+    bool pgmmvByteCodeExists = futil->isFileExist(byteCodePath);
+    PGMMV_SC_TRACE("SC_AGTK_AFTER_JSC_EXISTS");
+    if (pgmmvByteCodeExists)
     {
+        PGMMV_SC_TRACE("SC_AGTK_BEFORE_JSC_READ");
         Data data = futil->getDataFromFile(byteCodePath);
+        PGMMV_SC_TRACE("SC_AGTK_AFTER_JSC_READ");
         if (!data.isNull())
         {
+            PGMMV_SC_TRACE("SC_AGTK_BEFORE_JSC_DECODE");
             *script = JS_DecodeScript(cx, data.getBytes(), static_cast<uint32_t>(data.getSize()), nullptr);
+            PGMMV_SC_TRACE("SC_AGTK_AFTER_JSC_DECODE");
         }
         
         if (*script) {
@@ -761,34 +864,98 @@ JS::PersistentRootedScript* ScriptingCore::compileScript(const std::string& path
 
         JS::CompileOptions op(cx);
         op.setUTF8(true);
+        PGMMV_SC_TRACE("SC_AGTK_COMPILE_BEFORE_FULLPATH");
         std::string fullPath = futil->fullPathForFilename(path);
+        PGMMV_SC_TRACE("SC_AGTK_COMPILE_AFTER_FULLPATH");
         op.setFileAndLine(fullPath.c_str(), 1);
 
         bool ok = false;
 #if (CC_TARGET_PLATFORM == CC_PLATFORM_ANDROID)
+        PGMMV_SC_TRACE("SC_JSB_BEFORE_READ_ANDROID_1");
         std::string jsFileContent = futil->getStringFromFile(fullPath);
+        PGMMV_SC_TRACE("SC_JSB_AFTER_READ_ANDROID_1");
         if (!jsFileContent.empty())
         {
+            PGMMV_SC_TRACE("SC_JSB_BEFORE_COMPILE_ANDROID_1");
             ok = JS::Compile(cx, obj, op, jsFileContent.c_str(), jsFileContent.size(), &(*script));
+            PGMMV_SC_TRACE("SC_JSB_AFTER_COMPILE_ANDROID_1");
         }
 #else
 #ifdef USE_AGTK//sakihama-h, 2018.04.20
+		PGMMV_SC_TRACE("SC_AGTK_BEFORE_READ_JS");
 		auto jsData = FileUtils::getInstance()->getStringFromFile(path);
+
+    if (path.find("jsb_prepare.js") != std::string::npos) {
+        const std::string fullPath =
+            FileUtils::getInstance()->fullPathForFilename(path);
+
+        cocos2d::log(
+            "PGMMV_JSB_SOURCE size=%zu path=%s probe=%d identity=%d",
+            jsData.size(),
+            fullPath.c_str(),
+            jsData.find("PGMMV_GLOBAL_PROBE_V1") != std::string::npos ? 1 : 0,
+            jsData.find("PGMMV_GLOBAL_IDENTITY_TEST_V1") != std::string::npos ? 1 : 0
+        );
+
+        const size_t tailSize = jsData.size() > 240 ? 240 : jsData.size();
+        cocos2d::log(
+            "PGMMV_JSB_SOURCE_TAIL=%s",
+            jsData.substr(jsData.size() - tailSize).c_str()
+        );
+    }
+
+		PGMMV_SC_TRACE("SC_AGTK_AFTER_READ_JS");
+		PGMMV_SC_TRACE_VALUE_V1("SC_AGTK_JS_SOURCE_SIZE", jsData.size());
+PGMMV_SC_TRACE("SC_AGTK_BEFORE_COMPILE_JS");
+        // PGMMV_PREFIX_WARMUP_V2
+        PGMMV_SC_TRACE("SC_AGTK_WARMUP_V2_ENTER");
+        if (std::string(path).find("jsb_prepare.js") != std::string::npos
+            && jsData.size() > 1 && false /* PGMMV_WARMUP_DISABLED */) {
+            const size_t probeLen = jsData.size() > 1024 ? 1024 : jsData.size() - 1;
+            PGMMV_SC_TRACE_VALUE_V1("SC_AGTK_PREFIX_BEFORE", probeLen);
+            JS::PersistentRootedScript prefixScript(cx);
+            JS::CompileOptions prefixOptions(cx);
+            prefixOptions.setUTF8(true);
+            prefixOptions.setFileAndLine("pgmmv_prefix_probe.js", 1);
+            bool prefixOk = JS::Compile(
+                cx, obj, prefixOptions, jsData.c_str(),
+                probeLen, &prefixScript);
+            PGMMV_SC_TRACE_VALUE_V1("SC_AGTK_PREFIX_AFTER", probeLen);
+            PGMMV_SC_TRACE(prefixOk ? "SC_AGTK_PREFIX_OK" : "SC_AGTK_PREFIX_FALSE");
+            JS_ClearPendingException(cx);
+        }
+        PGMMV_SC_TRACE("SC_AGTK_WARMUP_V2_EXIT");
 		ok = JS::Compile(cx, obj, op, jsData.c_str(), jsData.size(), &(*script));
+		PGMMV_SC_TRACE("SC_AGTK_AFTER_COMPILE_JS");
 #else
+        PGMMV_SC_TRACE("SC_JSB_BEFORE_COMPILE_PATH_1");
         ok = JS::Compile(cx, obj, op, fullPath.c_str(), &(*script));
+        PGMMV_SC_TRACE("SC_JSB_AFTER_COMPILE_PATH_1");
 #endif
 #endif
+        PGMMV_SC_TRACE("SC_AGTK_BEFORE_OK_BRANCH");
         if (ok) {
+            PGMMV_SC_TRACE("SC_AGTK_OK_TRUE");
             compileSucceed = true;
+            PGMMV_SC_TRACE("SC_AGTK_BEFORE_SCRIPT_MAP_INSERT");
             filename_script[fullPath] = script;
+            PGMMV_SC_TRACE("SC_AGTK_AFTER_SCRIPT_MAP_INSERT");
+        }
+        PGMMV_SC_TRACE("SC_AGTK_AFTER_OK_BRANCH");
+        if (path.find("jsb_prepare.js") != std::string::npos) {
+            PGMMV_SC_TRACE("SC_AGTK_BEFORE_JS_DATA_RETAIN");
+            pgmmvRetainJsSource(jsData);
+            PGMMV_SC_TRACE("SC_AGTK_JS_DATA_RETAINED");
         }
     }
     else {
         filename_script[byteCodePath] = script;
     }
     
+    PGMMV_SC_TRACE("SC_AGTK_AFTER_SOURCE_BRANCH_SCOPE");
+        PGMMV_SC_TRACE("SC_AGTK_BEFORE_COMPILE_RESULT");
     if (compileSucceed) {
+    PGMMV_SC_TRACE("SC_AGTK_AFTER_COMPILE_RESULT_BRANCH");
         return script;
     } else {
         LOGD("ScriptingCore:: compileScript fail:%s", path.c_str());
@@ -838,7 +1005,9 @@ bool ScriptingCore::runScript(const std::string& path, JS::HandleObject global, 
         cx = _cx;
     }
 
+    PGMMV_SC_TRACE("SC_RUNSCRIPT_BEFORE_COMPILE_SCRIPT_1");
     auto script = compileScript(path, global, cx);
+    PGMMV_SC_TRACE("SC_RUNSCRIPT_AFTER_COMPILE_SCRIPT_1");
     if (script == nullptr) {
         return false;
     }
@@ -846,7 +1015,9 @@ bool ScriptingCore::runScript(const std::string& path, JS::HandleObject global, 
     bool evaluatedOK = false;
     if (script) {
         JS::RootedValue rval(cx);
+        PGMMV_SC_TRACE("SC_RUNSCRIPT_BEFORE_EXECUTE_SCRIPT_1");
         evaluatedOK = JS_ExecuteScript(cx, global, *script, &rval);
+        PGMMV_SC_TRACE("SC_RUNSCRIPT_AFTER_EXECUTE_SCRIPT_1");
         if (false == evaluatedOK) {
             cocos2d::log("Evaluating %s failed (evaluatedOK == JS_FALSE)", path.c_str());
             JS_ReportPendingException(cx);
@@ -869,7 +1040,9 @@ bool ScriptingCore::requireScript(const char *path, JS::HandleObject global, JSC
         cx = _cx;
     }
 
+    PGMMV_SC_TRACE("SC_RUNSCRIPT_BEFORE_COMPILE_SCRIPT_2");
     auto script = compileScript(path, global, cx);
+    PGMMV_SC_TRACE("SC_RUNSCRIPT_AFTER_COMPILE_SCRIPT_2");
 
     bool evaluatedOK = false;
     if (script)
@@ -948,6 +1121,7 @@ void ScriptingCore::cleanup()
     {
         JS_DestroyRuntime(_rt);
         _rt = NULL;
+        pgmmvReleaseRetainedJsSources();
     }
     
     for (auto iter = _js_global_type_map.begin(); iter != _js_global_type_map.end(); ++iter)

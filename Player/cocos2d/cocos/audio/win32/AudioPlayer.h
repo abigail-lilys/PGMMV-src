@@ -30,6 +30,7 @@
 #if (CC_TARGET_PLATFORM == CC_PLATFORM_WIN32) || (CC_TARGET_PLATFORM == CC_PLATFORM_EMSCRIPTEN) // [wasm-port] audio guard
 
 #include <condition_variable>
+#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -76,7 +77,15 @@ public:
 
 protected:
     void setCache(AudioCache* cache);
+
+#if defined(__EMSCRIPTEN__) && defined(USE_AGTK)
+    bool initWasmStream(int offsetFrame);
+    void updateWasmStream();
+    void cleanupWasmStream();
+#else
     void rotateBufferThread(int offsetFrame);
+#endif
+
     bool play2d();
 #ifdef USE_AGTK_STEREO_PAN
 	void calcVolume2(float pan[3], float volume2[2]);
@@ -118,6 +127,27 @@ protected:
     std::mutex _play2dMutex;
 
     unsigned int _id;
+
+#if defined(__EMSCRIPTEN__) && defined(USE_AGTK)
+    AudioDecoder* _wasmDecoder;
+    char* _wasmPcmBuffer;
+    char* _wasmPcmLeft;
+    char* _wasmPcmRight;
+    uint32_t _wasmFramesToRead;
+    uint32_t _wasmBufferBytes;
+    uint32_t _wasmCurrentFrame;
+    uint32_t _wasmLoopStart;
+    uint32_t _wasmLoopEnd;
+    uint32_t _wasmTotalFrames;
+    ALenum _wasmFormat;
+    ALsizei _wasmSampleRate;
+    ALsizei _wasmBytesPerFrame;
+    float _wasmDuration;
+    bool _wasmStereo;
+    bool _wasmOggLooping;
+    bool _wasmEof;
+    bool _wasmInitialized;
+#endif
 
     friend class AudioEngineImpl;
 };

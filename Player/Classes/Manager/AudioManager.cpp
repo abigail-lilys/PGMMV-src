@@ -98,12 +98,19 @@ bool AudioManager::init(agtk::data::SoundSettingData *soundSettingData)
 	if (soundSettingData == nullptr) {
 		return false;
 	}
+#ifdef __EMSCRIPTEN__
+#endif
+
 
 #if 1
 	// ACT2-3658
 	// 再生デバイスがなくAudioEngine::lazyInit()に失敗してもAudioManagerの初期化は済ませます。
 	// またlazyInit()は再生時AudioEngine::play2d()で毎回行っているので問題ありません。
+	// WASM-DEFER-AUDIOENGINE-LAZYINIT-V3
+	#ifndef __EMSCRIPTEN__
 	AudioEngine::lazyInit();
+	#endif
+
 #else
 	if (AudioEngine::lazyInit() == false) {
 		return false;
@@ -111,21 +118,34 @@ bool AudioManager::init(agtk::data::SoundSettingData *soundSettingData)
 #endif
 
 #if defined(USE_FADE)
-	_bgmVolume = agtk::ValueTimer<float>::create(soundSettingData->getBgmVolume() * 0.01f);
-	CC_SAFE_RETAIN(_bgmVolume);
-	_seVolume = agtk::ValueTimer<float>::create(soundSettingData->getSeVolume() * 0.01f);
-	CC_SAFE_RETAIN(_seVolume);
-	_voiceVolume = agtk::ValueTimer<float>::create(soundSettingData->getVoiceVolume() * 0.01f);
-	CC_SAFE_RETAIN(_voiceVolume);
-	this->setBgmList(cocos2d::__Dictionary::create());
-	this->setSeList(cocos2d::__Dictionary::create());
-	this->setVoiceList(cocos2d::__Dictionary::create());
+	// WASM-IDEMPOTENT-TIMERS-V2
+	if (!_bgmVolume) {
+	    _bgmVolume = agtk::ValueTimer<float>::create(soundSettingData->getBgmVolume() * 0.01f);
+	    CC_SAFE_RETAIN(_bgmVolume);
+	}
+	if (!_seVolume) {
+	    _seVolume = agtk::ValueTimer<float>::create(soundSettingData->getSeVolume() * 0.01f);
+	    CC_SAFE_RETAIN(_seVolume);
+	}
+	if (!_voiceVolume) {
+	    _voiceVolume = agtk::ValueTimer<float>::create(soundSettingData->getVoiceVolume() * 0.01f);
+	    CC_SAFE_RETAIN(_voiceVolume);
+	}
+	if (!_bgmList) this->setBgmList(cocos2d::__Dictionary::create());
+	if (!_seList) this->setSeList(cocos2d::__Dictionary::create());
+	if (!_voiceList) this->setVoiceList(cocos2d::__Dictionary::create());
 #else
 	this->setBgmVolume(soundSettingData->getBgmVolume() * 0.01f);
 	this->setSeVolume(soundSettingData->getSeVolume() * 0.01f);
 	this->setVoiceVolume(soundSettingData->getVoiceVolume() * 0.01f);
 #endif
-	return true;
+	
+#ifdef __EMSCRIPTEN__
+#if defined(USE_FADE)
+#else
+#endif
+#endif
+return true;
 }
 
 #if defined(USE_FADE)
@@ -474,7 +494,18 @@ AudioManager::AudioInfo* AudioManager::playBgm(int id, bool loop)
 #if defined(USE_FADE)
 	ret = this->playBgm(id, loop, p->getVolume(), p->getPan(), p->getPitch());
 #else
-	int audioId = AudioEngine::play2d(p->getFilename(), p->getLoop(), getBgmVolume() * p->getVolumeNormalize());// p->getPitch(), p->getPan());
+	#ifdef __EMSCRIPTEN__
+        {
+            static unsigned int n = 0;
+            if (n++ < 40) {
+                float g = this->getBgmVolume();
+                float v = this->getVariableVolume(
+                    agtk::data::EnumProjectSystemVariable::kProjectSystemVariableBgmVolumeAdjust
+                );
+            }
+        }
+#endif
+int audioId = AudioEngine::play2d(p->getFilename(), p->getLoop(), getBgmVolume() * p->getVolumeNormalize());// p->getPitch(), p->getPan());
 	if (audioId < 0) {
 		CC_ASSERT(0);
 		return ret;
@@ -581,7 +612,18 @@ AudioManager::AudioInfo* AudioManager::playSe(int id)
 #if defined(USE_FADE)
 	ret = this->playSe(id, p->getLoop(), p->getVolume(), p->getPan(), p->getPitch());
 #else
-	int audioId = AudioEngine::play2d(p->getFilename(), p->getLoop(), getSeVolume() * p->getVolumeNormalize());// p->getPitch(), p->getPan())
+	#ifdef __EMSCRIPTEN__
+        {
+            static unsigned int n = 0;
+            if (n++ < 40) {
+                float g = this->getSeVolume();
+                float v = this->getVariableVolume(
+                    agtk::data::EnumProjectSystemVariable::kProjectSystemVariableSeVolumeAdjust
+                );
+            }
+        }
+#endif
+int audioId = AudioEngine::play2d(p->getFilename(), p->getLoop(), getSeVolume() * p->getVolumeNormalize());// p->getPitch(), p->getPan())
 	if (audioId < 0) {
 		return ret;
 	}
@@ -705,7 +747,18 @@ AudioManager::AudioInfo*  AudioManager::playVoice(int id)
 #if defined(USE_FADE)
 	ret = this->playVoice(id, p->getLoop(), p->getVolume(), p->getPan(), p->getPitch());
 #else
-	int audioId = AudioEngine::play2d(p->getFilename(), p->getLoop(), getVoiceVolume() * p->getVolumeNormalize());// p->getPitch(), p->getPan());
+	#ifdef __EMSCRIPTEN__
+        {
+            static unsigned int n = 0;
+            if (n++ < 40) {
+                float g = this->getVoiceVolume();
+                float v = this->getVariableVolume(
+                    agtk::data::EnumProjectSystemVariable::kProjectSystemVariableVoiceVolumeAdjust
+                );
+            }
+        }
+#endif
+int audioId = AudioEngine::play2d(p->getFilename(), p->getLoop(), getVoiceVolume() * p->getVolumeNormalize());// p->getPitch(), p->getPan());
 	if (audioId < 0) {
 		CC_ASSERT(0);
 		return ret;
@@ -1093,6 +1146,19 @@ void AudioManager::setVolume(float volume)
 
 float AudioManager::getBgmVolume()
 {
+#ifdef __EMSCRIPTEN__
+    {
+        static unsigned int n = 0;
+        if (n++ < 40) {
+#if defined(USE_FADE)
+            float v = _bgmVolume ? _bgmVolume->getValue() : -1.0f;
+#else
+            float v = _bgmVolume;
+#endif
+        }
+    }
+#endif
+
 #if defined(USE_FADE)
 	return this->getMute() ? 0.0f : _bgmVolume ? _bgmVolume->getValue() : 0.0f;
 #else
@@ -1102,6 +1168,19 @@ float AudioManager::getBgmVolume()
 
 float AudioManager::getSeVolume()
 {
+#ifdef __EMSCRIPTEN__
+    {
+        static unsigned int n = 0;
+        if (n++ < 40) {
+#if defined(USE_FADE)
+            float v = _seVolume ? _seVolume->getValue() : -1.0f;
+#else
+            float v = _seVolume;
+#endif
+        }
+    }
+#endif
+
 #if defined(USE_FADE)
 	return this->getMute() ? 0.0f : _seVolume ? _seVolume->getValue() : 0.0f;
 #else
@@ -1111,6 +1190,19 @@ float AudioManager::getSeVolume()
 
 float AudioManager::getVoiceVolume()
 {
+#ifdef __EMSCRIPTEN__
+    {
+        static unsigned int n = 0;
+        if (n++ < 40) {
+#if defined(USE_FADE)
+            float v = _voiceVolume ? _voiceVolume->getValue() : -1.0f;
+#else
+            float v = _voiceVolume;
+#endif
+        }
+    }
+#endif
+
 #if defined(USE_FADE)
 	return this->getMute() ? 0.0f : _voiceVolume ? _voiceVolume->getValue() : 0.0f;
 #else
@@ -1129,7 +1221,15 @@ float AudioManager::getVariableVolume(agtk::data::EnumProjectSystemVariable kPro
 
 	auto gm = GameManager::getInstance();
 	auto volumeVariableData = gm->getPlayData()->getVariableData(agtk::data::PlayData::COMMON_PLAY_DATA_ID, kProjectSystemVariableId);
-	variableVolume = volumeVariableData->getValue() / 100; // パーセント
+	variableVolume = volumeVariableData->getValue() / 100;
+#ifdef __EMSCRIPTEN__
+    {
+        static unsigned int n = 0;
+        if (n++ < 100) {
+        }
+    }
+#endif
+ // パーセント
 	return variableVolume;
 }
 
@@ -1225,6 +1325,14 @@ float AudioManager::getVoiceCurrentTime(int voiceId, int audioId) {
 #if defined(USE_FADE)
 void AudioManager::setBgmVolume(float volume, float seconds)
 {
+#ifdef __EMSCRIPTEN__
+    {
+        static unsigned int n = 0;
+        if (n++ < 40) {
+        }
+    }
+#endif
+
 	if (!_bgmVolume) return;
 	_bgmVolume->start(volume, seconds);
 }
@@ -1241,6 +1349,14 @@ void AudioManager::setBgmVolume(float volume)
 #if defined(USE_FADE)
 void AudioManager::setSeVolume(float volume, float seconds)
 {
+#ifdef __EMSCRIPTEN__
+    {
+        static unsigned int n = 0;
+        if (n++ < 40) {
+        }
+    }
+#endif
+
 	if (!_seVolume) return;
 	_seVolume->start(volume, seconds);
 }
@@ -1257,6 +1373,14 @@ void AudioManager::setSeVolume(float volume)
 #if defined(USE_FADE)
 void AudioManager::setVoiceVolume(float volume, float seconds)
 {
+#ifdef __EMSCRIPTEN__
+    {
+        static unsigned int n = 0;
+        if (n++ < 40) {
+        }
+    }
+#endif
+
 	if (!_voiceVolume) return;
 	_voiceVolume->start(volume, seconds);
 }

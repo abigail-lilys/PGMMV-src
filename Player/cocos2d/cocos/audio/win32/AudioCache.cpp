@@ -26,6 +26,7 @@
 #define LOG_TAG "AudioCache"
 
 #include "platform/CCPlatformConfig.h"
+#include <stdio.h>
 
 #if (CC_TARGET_PLATFORM == CC_PLATFORM_WIN32) || (CC_TARGET_PLATFORM == CC_PLATFORM_EMSCRIPTEN) // [wasm-port] audio impl guard
 
@@ -400,7 +401,12 @@ void AudioCache::readDataTask(unsigned int selfId)
 					_queBufferSize2[index] = queBufferBytes / 2;
 					char* tmpBuf = (char*)malloc(queBufferBytes);
 					decoder->readFixedFrames(_queBufferFrames, tmpBuf);
-					copyData(_queBuffers[index], _queBuffers2[index], tmpBuf, queBufferBytes);
+					copyData(
+					    _queBuffers[index],
+					    _queBuffers2[index],
+					    tmpBuf,
+					    queBufferBytes
+					);
 					free(tmpBuf);
 				} else {
 					_queBuffers[index] = (char*)malloc(queBufferBytes);

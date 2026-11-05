@@ -26,6 +26,7 @@
 #define LOG_TAG "AudioPlayer"
 
 #include "platform/CCPlatformConfig.h"
+#include <stdio.h>
 
 #if (CC_TARGET_PLATFORM == CC_PLATFORM_WIN32) || (CC_TARGET_PLATFORM == CC_PLATFORM_EMSCRIPTEN) // [wasm-port] audio impl guard
 #include "audio/win32/AudioPlayer.h"
@@ -67,6 +68,26 @@ AudioPlayer::AudioPlayer()
 , _pitch(1.0f)
 #endif
 {
+#if defined(__EMSCRIPTEN__) && defined(USE_AGTK)
+    _wasmDecoder = nullptr;
+    _wasmPcmBuffer = nullptr;
+    _wasmPcmLeft = nullptr;
+    _wasmPcmRight = nullptr;
+    _wasmFramesToRead = 0;
+    _wasmBufferBytes = 0;
+    _wasmCurrentFrame = 0;
+    _wasmLoopStart = 0;
+    _wasmLoopEnd = 0;
+    _wasmTotalFrames = 0;
+    _wasmFormat = 0;
+    _wasmSampleRate = 0;
+    _wasmBytesPerFrame = 0;
+    _wasmDuration = 0.0f;
+    _wasmStereo = false;
+    _wasmOggLooping = false;
+    _wasmEof = false;
+    _wasmInitialized = false;
+#endif
 #ifdef USE_AGTK//sakihama-h, 2018.10.03
 	_filePath = filePath;
 #endif
@@ -124,6 +145,7 @@ void AudioPlayer::destroy()
         _play2dMutex.lock();
         _play2dMutex.unlock();
 
+#if !defined(__EMSCRIPTEN__) || !defined(USE_AGTK)
         if (_streamingSource)
         {
             if (_rotateBufferThread != nullptr)
@@ -143,21 +165,64 @@ void AudioPlayer::destroy()
                 ALOGVV("rotateBufferThread exited!");
             }
         }
+#endif
     } while(false);
 
     ALOGVV("Before alSourceStop");
+
+#if defined(__EMSCRIPTEN__) && defined(USE_AGTK)
+    bool wasmStereoForDestroy = _wasmStereo || (_audioCache && _audioCache->_isStereo);
+#endif
+
     alSourceStop(_alSource); CHECK_AL_ERROR_DEBUG();
 #ifdef USE_AGTK_STEREO_PAN
-	if (_audioCache && _audioCache->_isStereo) {
-		alSourceStop(_alSource2); CHECK_AL_ERROR_DEBUG();
-	}
+#if defined(__EMSCRIPTEN__) && defined(USE_AGTK)
+if (wasmStereoForDestroy) {
+#else
+if (_audioCache && _audioCache->_isStereo) {
 #endif
+alSourceStop(_alSource2); CHECK_AL_ERROR_DEBUG();
+}
+#endif
+
+#if defined(__EMSCRIPTEN__) && defined(USE_AGTK)
+    if (_streamingSource)
+    {
+        ALint queued = 0;
+        alGetSourcei(_alSource, AL_BUFFERS_QUEUED, &queued); CHECK_AL_ERROR_DEBUG();
+        while (queued > 0)
+        {
+            ALuint bufferId = 0;
+            alSourceUnqueueBuffers(_alSource, 1, &bufferId); CHECK_AL_ERROR_DEBUG();
+            --queued;
+        }
+#ifdef USE_AGTK_STEREO_PAN
+        if (wasmStereoForDestroy)
+        {
+            ALint queued2 = 0;
+            alGetSourcei(_alSource2, AL_BUFFERS_QUEUED, &queued2); CHECK_AL_ERROR_DEBUG();
+            while (queued2 > 0)
+            {
+                ALuint bufferId = 0;
+                alSourceUnqueueBuffers(_alSource2, 1, &bufferId); CHECK_AL_ERROR_DEBUG();
+                --queued2;
+            }
+        }
+#endif
+    }
+    cleanupWasmStream();
+#endif
+
     ALOGVV("Before alSourcei");
     alSourcei(_alSource, AL_BUFFER, NULL); CHECK_AL_ERROR_DEBUG();
 #ifdef USE_AGTK_STEREO_PAN
-	if (_audioCache && _audioCache->_isStereo) {
-		alSourcei(_alSource2, AL_BUFFER, NULL); CHECK_AL_ERROR_DEBUG();
-	}
+#if defined(__EMSCRIPTEN__) && defined(USE_AGTK)
+if (wasmStereoForDestroy) {
+#else
+if (_audioCache && _audioCache->_isStereo) {
+#endif
+alSourcei(_alSource2, AL_BUFFER, NULL); CHECK_AL_ERROR_DEBUG();
+}
 #endif
 
     _removeByAudioEngine = true;
@@ -196,6 +261,9 @@ void AudioPlayer::calcVolume2(float pan[3], float volume2[2])
 #endif
 bool AudioPlayer::play2d()
 {
+
+    static unsigned int diagPlayCount = 0;
+
     _play2dMutex.lock();
     ALOGV("AudioPlayer::play2d, _alSource: %u, player id=%u", _alSource, _id);
 #ifdef USE_AGTK_STEREO_PAN
@@ -260,6 +328,12 @@ bool AudioPlayer::play2d()
 			alSourcef(_alSource2, AL_PITCH, _pitch); CHECK_AL_ERROR_DEBUG();
 			alSource3f(_alSource2, AL_POSITION, panList[1], _pan[1], _pan[2]); CHECK_AL_ERROR_DEBUG();
 			alSourcef(_alSource2, AL_GAIN, volume2[1] * _volume); CHECK_AL_ERROR_DEBUG();
+#ifdef __EMSCRIPTEN__
+                {
+                    static unsigned int gainReadbackCount = 0;
+                }
+#endif
+
 		}
 		else {
 			//alSource3f(_alSource2, AL_POSITION, _pan[0], _pan[1], _pan[2]); CHECK_AL_ERROR_DEBUG();
@@ -356,7 +430,15 @@ bool AudioPlayer::play2d()
 				}
 #endif
                 CHECK_AL_ERROR_DEBUG();
+#if defined(__EMSCRIPTEN__) && defined(USE_AGTK)
+                if (!initWasmStream(_audioCache->_queBufferFrames * QUEUEBUFFER_NUM + 1))
+                {
+                    ALOGE("Failed to initialize WASM streaming audio.");
+                    break;
+                }
+#else
                 _rotateBufferThread = new std::thread(&AudioPlayer::rotateBufferThread, this, _audioCache->_queBufferFrames * QUEUEBUFFER_NUM + 1);
+#endif
             }
             else
             {
@@ -419,9 +501,455 @@ static void copyData(char *pcmData, char *pcmData2, char *buf, int size)
 	}
 }
 #endif
-#ifdef USE_AGTK
-#define USE_AGTK_OGG_LOOP_SUPPORT
+#if defined(__EMSCRIPTEN__) && defined(USE_AGTK)
+
+bool AudioPlayer::initWasmStream(int offsetFrame)
+{
+
+
+    if (_wasmInitialized)
+        return true;
+
+    if (_audioCache == nullptr)
+    {
+        ALOGE("initWasmStream: AudioCache is null.");
+        return false;
+    }
+
+#ifdef USE_AGTK_STEREO_PAN
+    _wasmStereo = _audioCache->_isStereo;
+#else
+    _wasmStereo = false;
 #endif
+
+    AudioDecoder* decoder = AudioDecoderManager::createDecoder(_audioCache->_fileFullPath.c_str());
+    
+
+    if (decoder == nullptr)
+    {
+        ALOGE("initWasmStream: createDecoder failed.");
+        return false;
+    }
+
+    if (!decoder->open(_audioCache->_fileFullPath.c_str()))
+    {
+        ALOGE("initWasmStream: decoder open failed.");
+        AudioDecoderManager::destroyDecoder(decoder);
+        return false;
+    }
+
+    const uint32_t framesToRead = _audioCache->_queBufferFrames;
+    const uint32_t bytesPerFrame = decoder->getBytesPerFrame();
+
+    if (framesToRead == 0 || bytesPerFrame == 0 || framesToRead > UINT32_MAX / bytesPerFrame)
+    {
+        ALOGE("initWasmStream: invalid PCM buffer size.");
+        decoder->close();
+        AudioDecoderManager::destroyDecoder(decoder);
+        return false;
+    }
+
+    const uint32_t bufferBytes = framesToRead * bytesPerFrame;
+    char* pcmBuffer = (char*)malloc(bufferBytes);
+    if (pcmBuffer == nullptr)
+    {
+        ALOGE("initWasmStream: PCM allocation failed.");
+        decoder->close();
+        AudioDecoderManager::destroyDecoder(decoder);
+        return false;
+    }
+
+    char* pcmLeft = nullptr;
+    char* pcmRight = nullptr;
+#ifdef USE_AGTK_STEREO_PAN
+    if (_wasmStereo)
+    {
+        pcmLeft = (char*)malloc(bufferBytes / 2);
+        pcmRight = (char*)malloc(bufferBytes / 2);
+        if (pcmLeft == nullptr || pcmRight == nullptr)
+        {
+            ALOGE("initWasmStream: stereo PCM allocation failed.");
+            free(pcmBuffer);
+            free(pcmLeft);
+            free(pcmRight);
+            decoder->close();
+            AudioDecoderManager::destroyDecoder(decoder);
+            return false;
+        }
+    }
+#endif
+
+    _wasmDecoder = decoder;
+    _wasmPcmBuffer = pcmBuffer;
+    _wasmPcmLeft = pcmLeft;
+    _wasmPcmRight = pcmRight;
+    _wasmFramesToRead = framesToRead;
+    _wasmBufferBytes = bufferBytes;
+    _wasmSampleRate = (ALsizei)decoder->getSampleRate();
+    _wasmBytesPerFrame = (ALsizei)bytesPerFrame;
+    _wasmFormat = _audioCache->_format;
+    _wasmDuration = _audioCache->_duration;
+    _wasmTotalFrames = decoder->getTotalFrames();
+
+    _wasmLoopStart = decoder->getLoopStart();
+    if (_wasmLoopStart == AudioDecoder::INVALID_FRAME_INDEX)
+    {
+        _wasmLoopEnd = 0;
+    }
+    else
+    {
+        uint64_t loopEnd64 = (uint64_t)_wasmLoopStart + decoder->getLoopLength();
+        if (loopEnd64 > _wasmTotalFrames)
+            _wasmLoopEnd = _wasmTotalFrames;
+        else
+            _wasmLoopEnd = (uint32_t)loopEnd64;
+    }
+
+    _wasmOggLooping = false;
+    _wasmEof = false;
+    _wasmCurrentFrame = 0;
+
+    if (offsetFrame > 0)
+    {
+        if (decoder->seek((uint32_t)offsetFrame))
+            _wasmCurrentFrame = (uint32_t)offsetFrame;
+    }
+
+    _wasmInitialized = true;
+    
+
+    return true;
+}
+
+void AudioPlayer::updateWasmStream()
+{
+
+    static unsigned int diagStreamTick = 0;
+
+
+    if (!_wasmInitialized || _wasmDecoder == nullptr || _isDestroyed)
+        return;
+
+    ALint processed = 0;
+    alGetSourcei(_alSource, AL_BUFFERS_PROCESSED, &processed);
+    CHECK_AL_ERROR_DEBUG();
+
+#ifdef USE_AGTK_STEREO_PAN
+    ALint processed2 = 0;
+    if (_wasmStereo)
+    {
+        alGetSourcei(_alSource2, AL_BUFFERS_PROCESSED, &processed2);
+        CHECK_AL_ERROR_DEBUG();
+        if (processed2 < processed)
+            processed = processed2;
+    }
+#endif
+
+    while (processed > 0)
+    {
+        --processed;
+
+        ALuint bufferId = 0;
+        ALuint bufferId2 = 0;
+
+        alSourceUnqueueBuffers(_alSource, 1, &bufferId);
+        CHECK_AL_ERROR_DEBUG();
+
+#ifdef USE_AGTK_STEREO_PAN
+        if (_wasmStereo)
+        {
+            alSourceUnqueueBuffers(_alSource2, 1, &bufferId2);
+            CHECK_AL_ERROR_DEBUG();
+        }
+#endif
+
+        if (_wasmEof)
+            continue;
+
+        if (_timeDirty)
+        {
+            _timeDirty = false;
+            uint32_t offsetFrame = (uint32_t)(_currTime * _wasmSampleRate);
+            if (_wasmDecoder->seek(offsetFrame))
+            {
+                _wasmCurrentFrame = offsetFrame;
+                _wasmOggLooping = false;
+            }
+            else
+            {
+                _wasmEof = true;
+                continue;
+            }
+        }
+        else
+        {
+#ifdef USE_AGTK_OGG_LOOP_SUPPORT
+#else
+            _currTime += QUEUEBUFFER_TIME_STEP;
+            if (_currTime > _wasmDuration)
+            {
+                if (_loop)
+                    _currTime = 0.0f;
+                else
+                    _currTime = _wasmDuration;
+            }
+#endif
+        }
+
+        uint32_t framesRead = 0;
+
+#ifdef USE_AGTK_OGG_LOOP_SUPPORT
+        _wasmOggLooping = _wasmOggLooping ||
+            (_wasmLoopStart != AudioDecoder::INVALID_FRAME_INDEX &&
+             _wasmCurrentFrame >= _wasmLoopStart);
+
+        if (_loop && _wasmOggLooping &&
+            _wasmLoopStart != AudioDecoder::INVALID_FRAME_INDEX)
+        {
+            if (_wasmCurrentFrame >= _wasmLoopEnd)
+            {
+                if (_wasmDecoder->seek(_wasmLoopStart))
+                    _wasmCurrentFrame = _wasmLoopStart;
+                else
+                {
+                    _wasmEof = true;
+                    continue;
+                }
+            }
+
+            const uint64_t nextFrame = (uint64_t)_wasmCurrentFrame + _wasmFramesToRead;
+            if (nextFrame > _wasmLoopEnd)
+            {
+                const uint32_t framesToRead1 = _wasmLoopEnd - _wasmCurrentFrame;
+                const uint32_t framesToRead2 = _wasmFramesToRead - framesToRead1;
+
+                const uint32_t framesRead1 = framesToRead1 == 0 ? 0 :
+                    _wasmDecoder->readFixedFrames(framesToRead1, _wasmPcmBuffer);
+
+                if (framesToRead1 > 0 && framesRead1 == 0)
+                {
+                    _wasmEof = true;
+                    continue;
+                }
+
+                if (!_wasmDecoder->seek(_wasmLoopStart))
+                {
+                    _wasmEof = true;
+                    continue;
+                }
+                _wasmCurrentFrame = _wasmLoopStart;
+
+                const uint32_t framesRead2 = _wasmDecoder->readFixedFrames(
+                    framesToRead2, _wasmPcmBuffer + framesRead1 * _wasmBytesPerFrame);
+
+                if (framesRead2 == 0)
+                {
+                    _wasmEof = true;
+                    continue;
+                }
+
+                framesRead = framesRead1 + framesRead2;
+                _wasmCurrentFrame += framesRead2;
+            }
+            else
+            {
+                framesRead = _wasmDecoder->readFixedFrames(_wasmFramesToRead, _wasmPcmBuffer);
+                if (framesRead > 0)
+                    _wasmCurrentFrame += framesRead;
+            }
+        }
+        else
+        {
+            framesRead = _wasmDecoder->readFixedFrames(_wasmFramesToRead, _wasmPcmBuffer);
+            if (framesRead > 0)
+                _wasmCurrentFrame += framesRead;
+        }
+#else
+        framesRead = _wasmDecoder->readFixedFrames(_wasmFramesToRead, _wasmPcmBuffer);
+        if (framesRead > 0)
+            _wasmCurrentFrame += framesRead;
+#endif
+
+        if (!_wasmEof && framesRead == 0)
+        {
+            if (_loop)
+            {
+                if (_wasmDecoder->seek(0))
+                {
+                    _wasmCurrentFrame = 0;
+                    _wasmOggLooping = false;
+                    framesRead = _wasmDecoder->readFixedFrames(_wasmFramesToRead, _wasmPcmBuffer);
+                    if (framesRead > 0)
+                        _wasmCurrentFrame += framesRead;
+                    else
+                        _wasmEof = true;
+                }
+                else
+                {
+                    _wasmEof = true;
+                }
+            }
+            else
+            {
+                _wasmEof = true;
+            }
+        }
+
+        if (_wasmEof || framesRead == 0)
+        {
+            _wasmEof = true;
+            continue;
+        }
+
+#ifdef USE_AGTK_OGG_LOOP_SUPPORT
+        _currTime = (float)_wasmCurrentFrame / (float)_wasmSampleRate;
+#endif
+
+#ifdef USE_AGTK_STEREO_PAN
+        if (_wasmStereo)
+        {
+            copyData(_wasmPcmLeft, _wasmPcmRight, _wasmPcmBuffer, framesRead * _wasmBytesPerFrame);
+            alBufferData(bufferId, _wasmFormat, _wasmPcmLeft, framesRead * _wasmBytesPerFrame / 2, _wasmSampleRate);
+            CHECK_AL_ERROR_DEBUG();
+            alBufferData(bufferId2, _wasmFormat, _wasmPcmRight, framesRead * _wasmBytesPerFrame / 2, _wasmSampleRate);
+            CHECK_AL_ERROR_DEBUG();
+            alSourceQueueBuffers(_alSource, 1, &bufferId);
+            CHECK_AL_ERROR_DEBUG();
+            alSourceQueueBuffers(_alSource2, 1, &bufferId2);
+            CHECK_AL_ERROR_DEBUG();
+        }
+        else
+#endif
+        {
+            alBufferData(bufferId, _wasmFormat, _wasmPcmBuffer, framesRead * _wasmBytesPerFrame, _wasmSampleRate);
+            CHECK_AL_ERROR_DEBUG();
+            alSourceQueueBuffers(_alSource, 1, &bufferId);
+            CHECK_AL_ERROR_DEBUG();
+        }
+    }
+
+    ALint queued = 0;
+    alGetSourcei(_alSource, AL_BUFFERS_QUEUED, &queued);
+    CHECK_AL_ERROR_DEBUG();
+
+#ifdef USE_AGTK_STEREO_PAN
+    ALint queued2 = 0;
+    if (_wasmStereo)
+    {
+        alGetSourcei(_alSource2, AL_BUFFERS_QUEUED, &queued2);
+        CHECK_AL_ERROR_DEBUG();
+    }
+#endif
+
+    if (_wasmEof)
+    {
+        // WASM-EOF-DRAIN-FIX: EOF stops decoding, not queued playback.
+        bool allQueuesDrained = (queued == 0);
+        
+        if (queued > 0)
+        {
+            ALint drainState = AL_STOPPED;
+            alGetSourcei(_alSource, AL_SOURCE_STATE, &drainState);
+            CHECK_AL_ERROR_DEBUG();
+            if (drainState != AL_PLAYING && drainState != AL_PAUSED)
+            {
+                alSourcePlay(_alSource);
+                CHECK_AL_ERROR_DEBUG();
+            }
+        }
+        
+        #ifdef USE_AGTK_STEREO_PAN
+        if (_wasmStereo)
+        {
+            if (queued2 > 0)
+            {
+                allQueuesDrained = false;
+                ALint drainState2 = AL_STOPPED;
+                alGetSourcei(_alSource2, AL_SOURCE_STATE, &drainState2);
+                CHECK_AL_ERROR_DEBUG();
+                if (drainState2 != AL_PLAYING && drainState2 != AL_PAUSED)
+                {
+                    alSourcePlay(_alSource2);
+                    CHECK_AL_ERROR_DEBUG();
+                }
+            }
+        }
+        #endif
+        
+        if (allQueuesDrained)
+            cleanupWasmStream();
+        return;
+    }
+
+    ALint sourceState = AL_STOPPED;
+    alGetSourcei(_alSource, AL_SOURCE_STATE, &sourceState);
+    CHECK_AL_ERROR_DEBUG();
+
+    if (queued > 0 && sourceState != AL_PLAYING)
+    {
+        alSourcePlay(_alSource);
+        CHECK_AL_ERROR_DEBUG();
+    }
+
+#ifdef USE_AGTK_STEREO_PAN
+    if (_wasmStereo && queued2 > 0)
+    {
+        ALint sourceState2 = AL_STOPPED;
+        alGetSourcei(_alSource2, AL_SOURCE_STATE, &sourceState2);
+        CHECK_AL_ERROR_DEBUG();
+        if (sourceState2 != AL_PLAYING)
+        {
+            alSourcePlay(_alSource2);
+            CHECK_AL_ERROR_DEBUG();
+        }
+    }
+#endif
+}
+
+void AudioPlayer::cleanupWasmStream()
+{
+    if (_wasmDecoder != nullptr)
+    {
+        _wasmDecoder->close();
+        AudioDecoderManager::destroyDecoder(_wasmDecoder);
+        _wasmDecoder = nullptr;
+    }
+
+    if (_wasmPcmBuffer != nullptr)
+    {
+        free(_wasmPcmBuffer);
+        _wasmPcmBuffer = nullptr;
+    }
+
+    if (_wasmPcmLeft != nullptr)
+    {
+        free(_wasmPcmLeft);
+        _wasmPcmLeft = nullptr;
+    }
+
+    if (_wasmPcmRight != nullptr)
+    {
+        free(_wasmPcmRight);
+        _wasmPcmRight = nullptr;
+    }
+
+    _wasmFramesToRead = 0;
+    _wasmBufferBytes = 0;
+    _wasmCurrentFrame = 0;
+    _wasmLoopStart = 0;
+    _wasmLoopEnd = 0;
+    _wasmTotalFrames = 0;
+    _wasmFormat = 0;
+    _wasmSampleRate = 0;
+    _wasmBytesPerFrame = 0;
+    _wasmDuration = 0.0f;
+    _wasmOggLooping = false;
+    _wasmInitialized = false;
+}
+
+#endif // __EMSCRIPTEN__ && USE_AGTK
+
+#if !defined(__EMSCRIPTEN__) || !defined(USE_AGTK)
 void AudioPlayer::rotateBufferThread(int offsetFrame)
 {
     char* tmpBuffer = nullptr;
@@ -596,6 +1124,7 @@ void AudioPlayer::rotateBufferThread(int offsetFrame)
     _isRotateThreadExited = true;
     ALOGV("%s exited.\n", __FUNCTION__);
 }
+#endif // !__EMSCRIPTEN__ || !USE_AGTK
 
 bool AudioPlayer::setLoop(bool loop)
 {
@@ -609,14 +1138,30 @@ bool AudioPlayer::setLoop(bool loop)
 
 bool AudioPlayer::setTime(float time)
 {
-    if (!_isDestroyed && time >= 0.0f && time < _audioCache->_duration) {
+    if (_isDestroyed || time < 0.0f)
+        return false;
 
-        _currTime = time;
-        _timeDirty = true;
+    float duration = 0.0f;
 
-        return true;
-    }
-    return false;
+#if defined(__EMSCRIPTEN__) && defined(USE_AGTK)
+    if (_wasmInitialized)
+        duration = _wasmDuration;
+    else if (_audioCache != nullptr)
+        duration = _audioCache->_duration;
+    else
+        return false;
+#else
+    if (_audioCache == nullptr)
+        return false;
+    duration = _audioCache->_duration;
+#endif
+
+    if (time >= duration)
+        return false;
+
+    _currTime = time;
+    _timeDirty = true;
+    return true;
 }
 
 #endif

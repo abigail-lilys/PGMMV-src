@@ -188,7 +188,7 @@ bool AudioEngine::lazyInit()
         }
     }
 
-#if (CC_TARGET_PLATFORM != CC_PLATFORM_ANDROID)
+#if (CC_TARGET_PLATFORM != CC_PLATFORM_ANDROID) && !defined(__EMSCRIPTEN__)
     if (_audioEngineImpl && s_threadPool == nullptr)
     {
         s_threadPool = new (std::nothrow) AudioEngineThreadPool();
@@ -732,10 +732,20 @@ void AudioEngine::addTask(const std::function<void()>& task)
 {
     lazyInit();
 
+#if defined(__EMSCRIPTEN__)
+    // PGMMV_EMSCRIPTEN_NO_AUDIO_WORKERS_V1
+    // The JoiPlay target is single-threaded: execute audio tasks inline instead of
+    // constructing AudioEngineThreadPool workers, which abort without pthread support.
+    if (_audioEngineImpl && task)
+    {
+        task();
+    }
+#else
     if (_audioEngineImpl && s_threadPool)
     {
         s_threadPool->addTask(task);
     }
+#endif
 }
 
 int AudioEngine::getPlayingAudioCount()

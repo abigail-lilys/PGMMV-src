@@ -24,6 +24,7 @@
  ****************************************************************************/
 
 #include "audio/win32/AudioDecoderOgg.h"
+#include <stdio.h>
 #include "audio/win32/AudioMacros.h"
 #include "platform/CCFileUtils.h"
 
@@ -168,8 +169,29 @@ namespace cocos2d { namespace experimental {
     {
         int currentSection = 0;
         int bytesToRead = framesToRead * _bytesPerFrame;
-        long bytesRead = ov_read(&_vf, pcmBuf, bytesToRead, 0, 2, 1, &currentSection);
-        return static_cast<uint32_t>(bytesRead / _bytesPerFrame);
+        long bytesRead = ov_read(
+            &_vf, pcmBuf, bytesToRead, 0, 2, 1, &currentSection
+        );
+        
+        if (bytesRead < 0)
+        {
+            return 0;
+        }
+        
+        if (_bytesPerFrame == 0)
+        {
+            return 0;
+        }
+        
+        const uint32_t framesRead =
+            static_cast<uint32_t>(
+                bytesRead / (long)_bytesPerFrame
+            );
+        
+        static unsigned int diagOggReadCount = 0;
+        
+        
+        return framesRead;
     }
 
     bool AudioDecoderOgg::seek(uint32_t frameOffset)

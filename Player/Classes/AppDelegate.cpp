@@ -1,4 +1,12 @@
-﻿#include "AppDelegate.h"
+﻿// PGMMV_STAGE3_PROBE_V1
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#define PGMMV_STAGE_TRACE(message) EM_ASM({ if (typeof Module !== "undefined" && Module.pgmmv && Module.pgmmv.trace) Module.pgmmv.trace(UTF8ToString($0)); }, message)
+#else
+#define PGMMV_STAGE_TRACE(message) ((void)0)
+#endif
+
+#include "AppDelegate.h"
 #include "GameScene.h"
 #include "GameManager.h"
 #include "DebugManager.h"
@@ -19,6 +27,10 @@
 #include "scripting/js-bindings/manual/js_module_register.h"
 #include "scripting/js-bindings/manual/cocos2d_specifics.hpp"
 #include "Manager/FontManager.h"
+#if (CC_TARGET_PLATFORM == CC_PLATFORM_EMSCRIPTEN)
+#include "platform/desktop/CCGLViewImpl-desktop.h"
+#include <emscripten/html5.h>
+#endif
 
 // #AGTK-NX
 #if (CC_TARGET_PLATFORM == CC_PLATFORM_WIN32) || (CC_TARGET_PLATFORM == CC_PLATFORM_MAC) || (CC_TARGET_PLATFORM == CC_PLATFORM_NX)
@@ -294,6 +306,9 @@ extern "C" {
 #endif
 
 bool AppDelegate::applicationDidFinishLaunching() {
+    // PGMMV_FPS_DISPLAY_HUD
+    cocos2d::Director::getInstance()->setDisplayStats(true);
+
 
 // #AGTK-NX
 #if (CC_TARGET_PLATFORM == CC_PLATFORM_NX)
@@ -448,21 +463,44 @@ bool AppDelegate::applicationDidFinishLaunching() {
 	ImageMtTask::getInstance()->setEnable(false);
 	ProjectLoadingManager::getInstance()->postProcessPreloadTex();
 #else
+	PGMMV_STAGE_TRACE("APP_BEFORE_GM_LOADJSON");
 	gm->loadJsonFile(projectFilePath);
+	PGMMV_STAGE_TRACE("APP_AFTER_GM_LOADJSON");
 #endif
+	PGMMV_STAGE_TRACE("APP_BEFORE_DESERIALIZE");
 	gm->deserialize();
+	PGMMV_STAGE_TRACE("APP_AFTER_DESERIALIZE");
+	PGMMV_STAGE_TRACE("APP_BEFORE_SERIALIZE");
 	gm->serialize();
+	PGMMV_STAGE_TRACE("APP_AFTER_SERIALIZE");
+    // PGMMV_STAGE4_PROBE_V1
 
 // #AGTK-NX
 #if (CC_TARGET_PLATFORM == CC_PLATFORM_NX)
 #endif
 
 	AGTK_ACTION_LOG(1, "# InputManager Init");
-	InputManager::getInstance()->init(gm->getProjectData()->getInputMapping());
+	PGMMV_STAGE_TRACE("APP4_BEFORE_INPUT_INIT");
+		InputManager::getInstance()->init(gm->getProjectData()->getInputMapping());
+		PGMMV_STAGE_TRACE("APP4_AFTER_INPUT_INIT");
 	AGTK_ACTION_LOG(1, "# AudioManager Init");
-	AudioManager::getInstance()->init(gm->getProjectData()->getSoundSetting());
+	// [WASM] Disabled AudioManager::init to prevent WebAudio crash in Joiplay
 
-	auto projectData = gm->getProjectData();
+	PGMMV_STAGE_TRACE("APP4_BEFORE_GET_PROJECTDATA");
+		auto projectData = gm->getProjectData();
+		PGMMV_STAGE_TRACE("APP4_AFTER_GET_PROJECTDATA");
+#ifdef __EMSCRIPTEN__
+    // WASM-AUDIOMANAGER-INIT-AFTER-PROJECTDATA-V3
+    {
+        auto wasmSoundSetting = projectData
+            ? projectData->getSoundSetting()
+            : nullptr;
+
+        bool wasmAudioInitOK =
+            AudioManager::getInstance()->init(wasmSoundSetting);
+
+    }
+#endif
 	auto screenSize = projectData->getScreenSize();
 	float frameZoomFactor = projectData->getMagnifyWindow() ? projectData->getWindowMagnification() : 1.0f;
 #if (CC_TARGET_PLATFORM == CC_PLATFORM_NX) // #AGTK-NX
@@ -471,11 +509,16 @@ bool AppDelegate::applicationDidFinishLaunching() {
 
     // initialize director
 	AGTK_ACTION_LOG(1, "# Director GetInstance");
-    auto director = Director::getInstance();
+    PGMMV_STAGE_TRACE("APP4_BEFORE_DIRECTOR");
+		auto director = Director::getInstance();
+		PGMMV_STAGE_TRACE("APP4_AFTER_DIRECTOR");
 
 	AGTK_ACTION_LOG(1, "# GetOpenGLView");
-	auto glview = director->getOpenGLView();
-    if(!glview) {
+	PGMMV_STAGE_TRACE("APP4_BEFORE_GET_OPENGL_VIEW");
+		auto glview = director->getOpenGLView();
+		PGMMV_STAGE_TRACE("APP4_AFTER_GET_OPENGL_VIEW");
+    PGMMV_STAGE_TRACE("APP4_BEFORE_GLVIEW_SETUP");
+	if(!glview) {
 #if (CC_TARGET_PLATFORM == CC_PLATFORM_WIN32) || (CC_TARGET_PLATFORM == CC_PLATFORM_MAC)
 		AGTK_ACTION_LOG(1, "# IMGUIGLViewImpl CreateWithRect");
 		glview = IMGUIGLViewImpl::createWithRect(
@@ -485,7 +528,35 @@ bool AppDelegate::applicationDidFinishLaunching() {
 			true//resizable
 		);
 // #AGTK-NX
-#elif (CC_TARGET_PLATFORM == CC_PLATFORM_NX)
+#elif (CC_TARGET_PLATFORM == CC_PLATFORM_EMSCRIPTEN)
+		// [PGMMV-WASM-CANVAS-CSS] Use actual browser canvas layout size.
+		double canvasCssWidth = 0.0;
+		double canvasCssHeight = 0.0;
+		const auto canvasCssResult = emscripten_get_element_css_size(
+		    "#canvas", &canvasCssWidth, &canvasCssHeight);
+
+		float frameWidth = screenSize.width;
+		float frameHeight = screenSize.height;
+		const bool canvasCssValid =
+		    canvasCssResult == EMSCRIPTEN_RESULT_SUCCESS &&
+		    canvasCssWidth > 0.0 && canvasCssHeight > 0.0 &&
+		    canvasCssWidth <= 16384.0 && canvasCssHeight <= 16384.0;
+
+		if (canvasCssValid) {
+		    frameWidth = static_cast<float>(canvasCssWidth);
+		    frameHeight = static_cast<float>(canvasCssHeight);
+		}
+
+		CCLOG("[PGMMV-WASM-CANVAS-CSS] result=%d css=%.1fx%.1f frame=%.1fx%.1f design=%.1fx%.1f",
+		      static_cast<int>(canvasCssResult),
+		      canvasCssWidth, canvasCssHeight,
+		      frameWidth, frameHeight,
+		      screenSize.width, screenSize.height);
+
+		glview = GLViewImpl::createWithRect(
+		    gm->getAppName()->getCString(),
+		    Rect(0, 0, frameWidth, frameHeight),
+		    1.0f, true);
 #else
 		glview = GLViewImpl::create(gm->getAppName()->getCString(), true);
 		//GLFWmonitor *monitor = glfwGetPrimaryMonitor();
@@ -500,7 +571,8 @@ bool AppDelegate::applicationDidFinishLaunching() {
 		director->setOpenGLView(glview);
 	}
 // #AGTK-NX #AGTK-WIN
-#if defined(USE_PRELOAD_TEX) && !defined(USE_BG_PROJECT_LOAD)
+PGMMV_STAGE_TRACE("APP4_AFTER_GLVIEW_SETUP");
+	#if defined(USE_PRELOAD_TEX) && !defined(USE_BG_PROJECT_LOAD)
 	ProjectLoadingManager::getInstance()->postProcessCacheTex();
 #endif
 #if defined(USE_PREVIEW) && (CC_TARGET_PLATFORM == CC_PLATFORM_WIN32)
@@ -511,8 +583,12 @@ bool AppDelegate::applicationDidFinishLaunching() {
 	);
 #endif
 
-	director->getInstance()->setProjection(Director::Projection::_2D);
-	director->getInstance()->setDepthTest(false);
+	PGMMV_STAGE_TRACE("APP4_BEFORE_SET_PROJECTION");
+		director->getInstance()->setProjection(Director::Projection::_2D);
+		PGMMV_STAGE_TRACE("APP4_AFTER_SET_PROJECTION");
+	PGMMV_STAGE_TRACE("APP4_BEFORE_SET_DEPTH_TEST");
+		director->getInstance()->setDepthTest(false);
+		PGMMV_STAGE_TRACE("APP4_AFTER_SET_DEPTH_TEST");
 
 	//アクションログ(action_log.txt)
 	AGTK_ACTION_LOG(1, "############################################################################################");
@@ -551,7 +627,9 @@ bool AppDelegate::applicationDidFinishLaunching() {
 	//resolution size
 	float scaleFactor = 1.0f;
 #if (CC_TARGET_PLATFORM != CC_PLATFORM_NX) // #AGTK-NX
-	glview->setDesignResolutionSize(screenSize.width, screenSize.height, ResolutionPolicy::SHOW_ALL);
+	PGMMV_STAGE_TRACE("APP4_BEFORE_SET_RESOLUTION");
+		glview->setDesignResolutionSize(screenSize.width, screenSize.height, ResolutionPolicy::SHOW_ALL);
+		PGMMV_STAGE_TRACE("APP4_AFTER_SET_RESOLUTION");
 #else
 #endif
 	director->setContentScaleFactor(scaleFactor);
@@ -585,24 +663,34 @@ bool AppDelegate::applicationDidFinishLaunching() {
         director->setContentScaleFactor(MIN(smallResolutionSize.height/designResolutionSize.height, smallResolutionSize.width/designResolutionSize.width));
     }
 */
-    register_all_packages();
+    PGMMV_STAGE_TRACE("APP4_BEFORE_REGISTER_PACKAGES");
+		register_all_packages();
+		PGMMV_STAGE_TRACE("APP4_AFTER_REGISTER_PACKAGES");
 
 	ScriptEngineProtocol *engine = ScriptingCore::getInstance();
 	ScriptEngineManager::getInstance()->setScriptEngine(engine);
 	ScriptingCore* sc = ScriptingCore::getInstance();
 	js_module_register();
 	AGTK_ACTION_LOG(1, "# ScriptingCore Start");
-	sc->start();
+	PGMMV_STAGE_TRACE("APP4_BEFORE_SCRIPT_ENGINE_START");
+		sc->start();
+		PGMMV_STAGE_TRACE("APP4_AFTER_SCRIPT_ENGINE_START");
 #ifdef USE_PREVIEW
 	sc->enableDebugger();
 #endif
-	sc->runScript("script/jsb_boot.js");
-	sc->runScript("script/jsb.js");
+	PGMMV_STAGE_TRACE("APP4_BEFORE_JSB_BOOT");
+		sc->runScript("script/jsb_boot.js");
+		PGMMV_STAGE_TRACE("APP4_AFTER_JSB_BOOT");
+	PGMMV_STAGE_TRACE("APP4_BEFORE_JSB");
+		sc->runScript("script/jsb.js");
+		PGMMV_STAGE_TRACE("APP4_AFTER_JSB");
 #if defined(USE_PREVIEW)
 	registerConsoleLogCallback(consoleLogCallback);
 #endif
 	AGTK_ACTION_LOG(1, "# FontManager GetInstance");
-	FontManager::getInstance();
+	PGMMV_STAGE_TRACE("APP4_BEFORE_FONT_MANAGER");
+		FontManager::getInstance();
+		PGMMV_STAGE_TRACE("APP4_AFTER_FONT_MANAGER");
 
 // #AGTK-NX
 #if (CC_TARGET_PLATFORM == CC_PLATFORM_NX)
@@ -619,16 +707,22 @@ bool AppDelegate::applicationDidFinishLaunching() {
 #endif
 	{
 #ifdef USE_BG_PROJECT_LOAD
-		auto scene = LogoScene::createScene(locale, projectFilePath);
+		PGMMV_STAGE_TRACE("APP_BEFORE_LOGO_SCENE_CREATE");
+	auto scene = LogoScene::createScene(locale, projectFilePath);
+	PGMMV_STAGE_TRACE("APP_AFTER_LOGO_SCENE_CREATE");
 #else
+		PGMMV_STAGE_TRACE("APP4_BEFORE_LOGO_SCENE");
 		auto scene = LogoScene::createScene( locale );
+		PGMMV_STAGE_TRACE("APP4_AFTER_LOGO_SCENE");
 #endif
 		if (!scene) {
 			AGTK_ACTION_LOG(1, "# GameManager StartCanvas");
 			GameManager::getInstance()->startCanvas();
 		}
 		else {
-			director->runWithScene(scene);
+			PGMMV_STAGE_TRACE("APP4_BEFORE_RUN_WITH_SCENE");
+		director->runWithScene(scene);
+		PGMMV_STAGE_TRACE("APP4_AFTER_RUN_WITH_SCENE");
 		}
 	}
 #else
@@ -716,12 +810,15 @@ bool AppDelegate::applicationDidFinishLaunching() {
 	auto inputManager = InputManager::getInstance();
 	inputManager->setInputMappingData(projectData->getInputMapping());
 	agtk::setTileCollisionThreshold(projectData->getWallDetectionOverlapMargin());
+	#ifdef USE_MULTITHREAD_OBJECT_UPDATE
+	// PGMMV_SINGLE_THREAD_SKIP_THREAD_CONFIG_V1
 	if (projectData->getMultithreading()) {
 		ThreadManager::setUsedThreadCount(MAX(1, MIN(2, AGTK_THREAD_COUNT)));
 	}
 	else {
 		ThreadManager::setUsedThreadCount(1);
 	}
+	#endif // USE_MULTITHREAD_OBJECT_UPDATE
 #endif
 
     printf("[wasm-port] applicationDidFinishLaunching returning true!\n"); fflush(stdout);

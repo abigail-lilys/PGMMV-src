@@ -130,6 +130,9 @@ protected:
         {
 // #AGTK-NX
 #if (CC_TARGET_PLATFORM == CC_PLATFORM_NX)
+#elif defined(__EMSCRIPTEN__)
+            // PGMMV_EMSCRIPTEN_INLINE_ASYNC_TASK_POOL_V1
+            // No Worker threads in JoiPlay; enqueue() executes inline.
 #else
             _thread = std::thread(
                                   [this]
@@ -170,7 +173,7 @@ protected:
             }
             _condition.notify_all();
 // #AGTK-NX
-#if (CC_TARGET_PLATFORM == CC_PLATFORM_NX)
+#if (CC_TARGET_PLATFORM == CC_PLATFORM_NX) || defined(__EMSCRIPTEN__)
 #else
             _thread.join();
 #endif
@@ -186,6 +189,15 @@ protected:
 
         void enqueue(TaskCallBack callback, void* callbackParam, std::function<void()> task)
         {
+#if defined(__EMSCRIPTEN__)
+            // PGMMV_EMSCRIPTEN_INLINE_ASYNC_TASK_POOL_V1
+            if (_stop) {
+                CC_ASSERT(0 && "already stop");
+                return;
+            }
+            if (task) task();
+            if (callback) callback(callbackParam);
+#else
             AsyncTaskCallBack taskCallBack;
             taskCallBack.callback = std::move(callback);
             taskCallBack.callbackParam = callbackParam;
@@ -204,6 +216,7 @@ protected:
                 _taskCallBacks.push(std::move(taskCallBack));
             }
             _condition.notify_one();
+#endif
         }
     private:
         
