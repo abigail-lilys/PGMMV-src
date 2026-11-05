@@ -67,7 +67,7 @@
 #endif
 //#define USE_COLLISION_MEASURE
 #define USE_SCRIPT_PRECOMPILE	//動作確認が取れたらifdefを除去してすっきりさせる。
-#define USE_MULTITHREAD_OBJECT_UPDATE	// Objectの壁判定更新をマルチスレッドで処理する
+#define USE_MULTITHREAD_OBJECT_UPDATE // PGMMV_EMSCRIPTEN_ENABLE_OBJECT_UPDATE_MT_V2 (wasm: ThreadManager inline, usedThreadCount=1)
 //#define USE_MULTITHREAD_MEASURE	//マルチスレッド処理の処理時間を計測
 #define USE_MULTITHREAD_UPDOWN_THREADS	// マルチスレッド処理で使用するスレッド数を増減できるようにする
 #define USE_DESIGNATED_RESOLUTION_RENDER

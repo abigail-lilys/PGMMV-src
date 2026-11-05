@@ -16,6 +16,22 @@ int ThreadManager::playerBlockedCount = 0;
 
 ThreadManager::ThreadManager()
 {
+#if defined(__EMSCRIPTEN__)
+    // PGMMV_EMSCRIPTEN_INLINE_THREADMANAGER_V1: initialise slots without native worker threads.
+    for (int i = 0; i < AGTK_THREAD_COUNT - 1; ++i) {
+        _threadInfoList[i].state = kThreadStateIdle;
+        _threadInfoList[i].i = i + 1;
+        _threadInfoList[i].thread = nullptr;
+        _threadInfoList[i].func = nullptr;
+        _threadInfoList[i].subInfo = nullptr;
+#ifdef USE_MULTITHREAD_MEASURE
+        _threadInfoList[i].count = 0;
+        _threadInfoList[i].maxDuration = 0;
+        _threadInfoList[i].buf[0] = '\\0';
+#endif
+    }
+#else
+
 	// スレッド生成
 	for (int i = 0; i < AGTK_THREAD_COUNT - 1; i++) {
 		_threadInfoList[i].state = kThreadStateIdle;		// 状態
@@ -29,10 +45,14 @@ ThreadManager::ThreadManager()
 		cocos2d::log("SetThreadPriority: %d", result);
 #endif
 	}
+
+#endif // PGMMV_EMSCRIPTEN_INLINE_THREADMANAGER_V1
 }
 
 ThreadManager::~ThreadManager()
 {
+#if !defined(__EMSCRIPTEN__)
+
 	// スレッド解放
 	for (int i = 0; i < AGTK_THREAD_COUNT - 1; i++) {
 		_threadInfoList[i].state = kThreadStateEnd;
@@ -44,6 +64,8 @@ ThreadManager::~ThreadManager()
 		delete _threadInfoList[i].thread;
 		_threadInfoList[i].thread = nullptr;
 	}
+
+#endif // PGMMV_EMSCRIPTEN_INLINE_THREADMANAGER_V1
 }
 
 ThreadManager* ThreadManager::getInstance()
@@ -176,12 +198,21 @@ void ThreadManager::changeUsedThreadCount(int add)
 
 void ThreadManager::setUsedThreadCount(int count)
 {
-	sUsedThreadCount = count;
+#if defined(__EMSCRIPTEN__)
+    (void)count;
+    sUsedThreadCount = 1;
+#else
+    sUsedThreadCount = count;
+#endif
 }
 
 int ThreadManager::getUsedThreadCount()
 {
-	return sUsedThreadCount;
+#if defined(__EMSCRIPTEN__)
+    return 1;
+#else
+    return sUsedThreadCount;
+#endif
 }
 
 #ifdef USE_MULTITHREAD_MEASURE

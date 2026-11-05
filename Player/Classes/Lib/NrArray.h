@@ -7,7 +7,7 @@ NS_AGTK_BEGIN
 
 //-------------------------------------------------------------------------------------------------------------------
 
-#ifdef USE_MULTITHREAD_OBJECT_UPDATE
+#if defined(USE_MULTITHREAD_OBJECT_UPDATE) || defined(__EMSCRIPTEN__)
 //RetainしないArray
 class NrArray : public Ref, public Clonable
 {

@@ -1,4 +1,4 @@
-﻿#include "Slope.h"
+#include "Slope.h"
 #include "Scene.h"
 #include "Object.h"
 #include "Collision.h"
@@ -698,7 +698,11 @@ bool Slope::checkHit(Rect crntRect, Rect oldRect, Vec2& moveVec, bool touched, b
 		//タイルにぶつかっているかチェック。
 // #AGTK-NX
 #if CC_TARGET_PLATFORM != CC_PLATFORM_NX
-		std::function<bool(std::vector<agtk::Tile *>, cocos2d::Vec2)> checkColliedTile = [](std::vector<agtk::Tile *> tileList, cocos2d::Vec2 v) {
+		#ifdef USE_MULTITHREAD_OBJECT_UPDATE
+std::function<bool(std::vector<agtk::Tile *>, cocos2d::Vec2)> checkColliedTile = [](std::vector<agtk::Tile *> tileList, cocos2d::Vec2 v) {
+#else
+std::function<bool(cocos2d::Array *, cocos2d::Vec2)> checkColliedTile = [](cocos2d::Array *tileList, cocos2d::Vec2 v) {
+#endif
 #else
 #endif
 #ifdef USE_MULTITHREAD_OBJECT_UPDATE
@@ -3576,7 +3580,7 @@ bool Slope::checkPushBackX(bool isPlayer, Rect& checkRect, Rect& oldRect, cocos2
 #ifdef USE_MULTITHREAD_OBJECT_UPDATE
 bool Slope::checkPushBackY(Rect& checkRect, Rect& oldRect, std::vector<agtk::Tile *> &tileList, float moveY, float& pushVal, float correctVal)
 #else
-bool Slope::checkPushBackY(Rect& checkRect, Rect& oldRect, cocos2d::Array* tileList, tileList, float moveY, float& pushVal, float correctVal)
+bool Slope::checkPushBackY(Rect& checkRect, Rect& oldRect, cocos2d::Array* tileList, float moveY, float& pushVal, float correctVal)
 #endif
 {
 	// 矩形サイズが0の場合は処理しない

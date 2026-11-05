@@ -4,7 +4,7 @@
 #include "Lib/NrArray.h"
 #include "Manager/ThreadManager.h"
 
-#ifdef USE_MULTITHREAD_OBJECT_UPDATE
+// Single-thread WASM: retain MtVector as a collision data container.
 namespace agtk {
 //マルチスレッドアクセスされたときに問題を起こしにくいVectorクラス。
 template <typename T>
@@ -16,7 +16,7 @@ public:
 	MtVector(MtVector &v) : m_array(nullptr), m_lastArray(nullptr), m_size(0), m_reserved(128) {
 		if (!v.try_lock()) {
 			v.lock();
-#ifdef USE_MULTITHREAD_MEASURE
+#if defined(USE_MULTITHREAD_MEASURE) && defined(USE_MULTITHREAD_OBJECT_UPDATE)
 			ThreadManager::mtVectorBlockedCount++;
 #endif
 		}
@@ -54,7 +54,7 @@ public:
 	void clear() {
 		if (!m_mutex.try_lock()) {
 			m_mutex.lock();
-#ifdef USE_MULTITHREAD_MEASURE
+#if defined(USE_MULTITHREAD_MEASURE) && defined(USE_MULTITHREAD_OBJECT_UPDATE)
 			ThreadManager::mtVectorBlockedCount++;
 #endif
 		}
@@ -73,7 +73,7 @@ public:
 	void push_back(const T &item) {
 		if (!m_mutex.try_lock()) {
 			m_mutex.lock();
-#ifdef USE_MULTITHREAD_MEASURE
+#if defined(USE_MULTITHREAD_MEASURE) && defined(USE_MULTITHREAD_OBJECT_UPDATE)
 			ThreadManager::mtVectorBlockedCount++;
 #endif
 		}
@@ -112,13 +112,13 @@ public:
 		if (this < &v) {
 			if (!m_mutex.try_lock()) {
 				m_mutex.lock();
-#ifdef USE_MULTITHREAD_MEASURE
+#if defined(USE_MULTITHREAD_MEASURE) && defined(USE_MULTITHREAD_OBJECT_UPDATE)
 				ThreadManager::mtVectorBlockedCount++;
 #endif
 			}
 			if (!v.m_mutex.try_lock()) {
 				v.m_mutex.lock();
-#ifdef USE_MULTITHREAD_MEASURE
+#if defined(USE_MULTITHREAD_MEASURE) && defined(USE_MULTITHREAD_OBJECT_UPDATE)
 				ThreadManager::mtVectorBlockedCount++;
 #endif
 			}
@@ -126,13 +126,13 @@ public:
 		else {
 			if (!v.m_mutex.try_lock()) {
 				v.m_mutex.lock();
-#ifdef USE_MULTITHREAD_MEASURE
+#if defined(USE_MULTITHREAD_MEASURE) && defined(USE_MULTITHREAD_OBJECT_UPDATE)
 				ThreadManager::mtVectorBlockedCount++;
 #endif
 			}
 			if (!m_mutex.try_lock()) {
 				m_mutex.lock();
-#ifdef USE_MULTITHREAD_MEASURE
+#if defined(USE_MULTITHREAD_MEASURE) && defined(USE_MULTITHREAD_OBJECT_UPDATE)
 				ThreadManager::mtVectorBlockedCount++;
 #endif
 			}
@@ -177,7 +177,7 @@ public:
 	void addObjectsFromArray(cocos2d::__Array *array) {
 		if (!m_mutex.try_lock()) {
 			m_mutex.lock();
-#ifdef USE_MULTITHREAD_MEASURE
+#if defined(USE_MULTITHREAD_MEASURE) && defined(USE_MULTITHREAD_OBJECT_UPDATE)
 			ThreadManager::mtVectorBlockedCount++;
 #endif
 		}
@@ -215,7 +215,7 @@ public:
 	void addObjectsFromArray(agtk::NrArray *array) {
 		if (!m_mutex.try_lock()) {
 			m_mutex.lock();
-#ifdef USE_MULTITHREAD_MEASURE
+#if defined(USE_MULTITHREAD_MEASURE) && defined(USE_MULTITHREAD_OBJECT_UPDATE)
 			ThreadManager::mtVectorBlockedCount++;
 #endif
 		}
@@ -266,7 +266,7 @@ public:
 	void pop_back() {
 		if (!m_mutex.try_lock()) {
 			m_mutex.lock();
-#ifdef USE_MULTITHREAD_MEASURE
+#if defined(USE_MULTITHREAD_MEASURE) && defined(USE_MULTITHREAD_OBJECT_UPDATE)
 			ThreadManager::mtVectorBlockedCount++;
 #endif
 		}
@@ -279,7 +279,7 @@ public:
 	void removeObjectAtIndex(size_t pos) {
 		if (!m_mutex.try_lock()) {
 			m_mutex.lock();
-#ifdef USE_MULTITHREAD_MEASURE
+#if defined(USE_MULTITHREAD_MEASURE) && defined(USE_MULTITHREAD_OBJECT_UPDATE)
 			ThreadManager::mtVectorBlockedCount++;
 #endif
 		}
@@ -292,7 +292,7 @@ public:
 	void removeObject(const T &item) {
 		if (!m_mutex.try_lock()) {
 			m_mutex.lock();
-#ifdef USE_MULTITHREAD_MEASURE
+#if defined(USE_MULTITHREAD_MEASURE) && defined(USE_MULTITHREAD_OBJECT_UPDATE)
 			ThreadManager::mtVectorBlockedCount++;
 #endif
 		}
@@ -329,7 +329,7 @@ public:
 	MtVector<T> &operator=(const MtVector<T> &data) {
 		if (!data.m_mutex.try_lock()) {
 			data.m_mutex.lock();
-#ifdef USE_MULTITHREAD_MEASURE
+#if defined(USE_MULTITHREAD_MEASURE) && defined(USE_MULTITHREAD_OBJECT_UPDATE)
 			ThreadManager::mtVectorBlockedCount++;
 #endif
 		}
@@ -358,6 +358,5 @@ protected:
 	size_t m_reserved;
 };
 }
-#endif
 
 #endif /* _MT_VECTOR_H_ **/
