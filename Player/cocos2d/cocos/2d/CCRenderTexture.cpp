@@ -741,17 +741,35 @@ void RenderTexture::onEnd()
 
 void RenderTexture::onClear()
 {
-    // save clear color
+    // Save clear color and color write mask.
     GLfloat oldClearColor[4] = {0.0f};
     GLfloat oldDepthClearValue = 0.0f;
     GLint oldStencilClearValue = 0;
     GLboolean oldDepthWrite = GL_FALSE;
+    GLboolean oldColorMask[4] = {
+        GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE
+    };
 
-    // backup and set
+    // Backup and set.
     if (_clearFlags & GL_COLOR_BUFFER_BIT)
     {
         glGetFloatv(GL_COLOR_CLEAR_VALUE, oldClearColor);
-        glClearColor(_clearColor.r, _clearColor.g, _clearColor.b, _clearColor.a);
+        glGetBooleanv(GL_COLOR_WRITEMASK, oldColorMask);
+
+        glClearColor(
+            _clearColor.r,
+            _clearColor.g,
+            _clearColor.b,
+            _clearColor.a
+        );
+
+        // Ensure RGBA channels are all cleared.
+        glColorMask(
+            GL_TRUE,
+            GL_TRUE,
+            GL_TRUE,
+            GL_TRUE
+        );
     }
 
     if (_clearFlags & GL_DEPTH_BUFFER_BIT)
@@ -769,19 +787,42 @@ void RenderTexture::onClear()
         glClearStencil(_clearStencil);
     }
 
-    // clear
-    glClear(_clearFlags);
+    // Clear.
+    if (_clearFlags & GL_COLOR_BUFFER_BIT) {
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    } else {
+        glClear(_clearFlags);
+    }
 
-    // restore
+    // Restore.
     if (_clearFlags & GL_COLOR_BUFFER_BIT)
     {
-        glClearColor(oldClearColor[0], oldClearColor[1], oldClearColor[2], oldClearColor[3]);
+        glColorMask(
+            oldColorMask[0],
+            oldColorMask[1],
+            oldColorMask[2],
+            oldColorMask[3]
+        );
+
+        glClearColor(
+            oldClearColor[0],
+            oldClearColor[1],
+            oldClearColor[2],
+            oldClearColor[3]
+        );
     }
+
     if (_clearFlags & GL_DEPTH_BUFFER_BIT)
     {
         glClearDepth(oldDepthClearValue);
         glDepthMask(oldDepthWrite);
     }
+
     if (_clearFlags & GL_STENCIL_BUFFER_BIT)
     {
         glClearStencil(oldStencilClearValue);

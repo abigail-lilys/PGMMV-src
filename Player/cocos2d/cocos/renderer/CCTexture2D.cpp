@@ -754,6 +754,16 @@ std::string Texture2D::getDescription() const
 // implementation Texture2D (Image)
 bool Texture2D::initWithImage(Image *image)
 {
+    {
+        static int _texInitCount = 0;
+        if (image && _texInitCount < 500) {
+            _texInitCount++;
+            cocos2d::log("[TEX] init path=%s size=%dx%d",
+                  image->getFilePath().c_str(),
+                  (int)getContentSize().width, (int)getContentSize().height);
+        }
+    }
+
     return initWithImage(image, g_defaultAlphaPixelFormat);
 }
 

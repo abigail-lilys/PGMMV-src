@@ -6030,7 +6030,8 @@ void getTouchingObjectWallHitInfoAnyway(WallHitInfo &wallHitInfo, agtk::Object *
 }
 
 #ifdef USE_MULTITHREAD_OBJECT_UPDATE
-std::vector<agtk::Tile *> getFilteredListByTileGroup(const std::vector<agtk::Tile *> &list, int collideWithTileGroupBit) //[wasm-port]const-ref
+std::vector<agtk::Tile *> getFilteredListByTileGroup(const std::vector<agtk::Tile *> &list, int collideWithTileGroupBit)
+ //[wasm-port]const-ref
 {
 	std::vector<agtk::Tile *> newList;
 	for (auto tile : list) {
@@ -6567,7 +6568,8 @@ void updateObjectWallEffect(agtk::Object *object, cocos2d::__Array *tileList, ag
 * 重なり時のマスク効果の更新
 */
 #ifdef USE_MULTITHREAD_OBJECT_UPDATE
-void updateObjectOverlapMaskEffect(agtk::Object *object, const std::vector<agtk::Tile *> &tileList, agtk::data::TileData::EnumConditionType conditionType) //[wasm-port]const-ref
+void updateObjectOverlapMaskEffect(agtk::Object *object, const std::vector<agtk::Tile *> &tileList, agtk::data::TileData::EnumConditionType conditionType)
+ //[wasm-port]const-ref
 #else
 void updateObjectOverlapMaskEffect(agtk::Object *object, cocos2d::__Array *tileList, agtk::data::TileData::EnumConditionType conditionType)
 #endif
@@ -20074,7 +20076,8 @@ void Object::setupPhysicsBody(bool isInit)
 // #AGTK-NX
 #if (CC_TARGET_PLATFORM == CC_PLATFORM_NX)
 #else
-				auto rect = cocos2d::Rect(0, 0, 1, 1); // [wasm-port] std ctor/ptr
+				auto rect = cocos2d::Rect(0, 0, 1, 1);
+ // [wasm-port] std ctor/ptr
 #endif
 				auto offset = cocos2d::Vec2::ZERO;
 				auto shape = cocos2d::PhysicsShapeBox::create(rect.size, material, offset);
@@ -20104,7 +20107,8 @@ void Object::setupPhysicsBody(bool isInit)
 				}
 			}
 			/*else {
-				auto rect = cocos2d::Rect(0, 0, 1, 1); // [wasm-port] std ctor/ptr
+				auto rect = cocos2d::Rect(0, 0, 1, 1);
+ // [wasm-port] std ctor/ptr
 				auto offset = cocos2d::Vec2::ZERO;
 				auto shape = cocos2d::PhysicsShapeBox::create(rect.size, material, offset);
 				physicsBody->addShape(shape, false);
@@ -20266,7 +20270,8 @@ void Object::setupPhysicsBody(bool isInit)
 				}
 			}
 			/*else {
-				auto rect = cocos2d::Rect(0, 0, 8, 8); // [wasm-port] std ctor/ptr
+				auto rect = cocos2d::Rect(0, 0, 8, 8);
+ // [wasm-port] std ctor/ptr
 				auto offset = cocos2d::Vec2::ZERO;
 				auto shape = cocos2d::PhysicsShapeBox::create(rect.size, material, offset);
 				physicsBody->addShape(shape, false);
@@ -20529,6 +20534,16 @@ void Object::setUpArroundCharacterView()
 			drawNode->setPosition(Vec2::ZERO);
 			drawNode->setBlendFunc({ GL_ZERO, GL_SRC_ALPHA });
 			this->setTransparentMaskNode(drawNode);
+                        {
+                            static int _maskCreateCount = 0;
+                            if (_maskCreateCount < 20) {
+                                _maskCreateCount++;
+                                cocos2d::log("[MASK] create type=%d w=%d h=%d",
+                                      (int)viewType,
+                                      (int)settingData->getWidth(),
+                                      (int)settingData->getHeight());
+                            }
+                        }
 
 			_isTransparent = true;
 		}
@@ -20558,6 +20573,14 @@ void Object::drawTransparentMaskNode(Renderer *renderer, cocos2d::Mat4 viewMatri
 			auto pos = agtk::Scene::getPositionCocos2dFromScene(this->getPosition()) + this->getPlayer()->getBasePlayer()->getOrigin() + Vec2(getContentSize().width, -getContentSize().height) * 0.5f;
 			_transparentMaskNode->setPosition(pos);
 			_transparentMaskNode->setVisible(true);
+                        {
+                            static int _maskDrawCount = 0;
+                            if (_maskDrawCount < 10) {
+                                _maskDrawCount++;
+                                cocos2d::log("[MASK] draw target=%d overlap=%d",
+                                      targetType, _overlapFlag);
+                            }
+                        }
 			_transparentMaskNode->visit(renderer, viewMatrix, false);
 			_transparentMaskNode->setVisible(false);
 		}

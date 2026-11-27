@@ -377,9 +377,25 @@ bool ImageData::init(const rapidjson::Value& json, const std::string &projectPat
 	else {
 #endif
 	cocos2d::Image img;
-	img.initWithImageFile(this->getFilename());
+	// AETHER_PGMMV_IMAGE_HEADER_ONLY_CALL_V1
+	if (!img.initWithImageFileHeader(this->getFilename())) {
+	    // Fallback for formats other than PNG/JPEG and unsupported wrappers.
+	    img.initWithImageFile(this->getFilename());
+	}
 	this->setTexWidth(img.getWidth());
 	this->setTexHeight(img.getHeight());
+	
+	// AETHER_PGMMV_IMAGE_DECODE_PEAK_V1
+	// Log only when a new maximum decoded image buffer appears.
+	static long long maxDecodedBytes = 0;
+	const long long decodedBytes =
+	    static_cast<long long>(img.getDataLen());
+	if (decodedBytes > maxDecodedBytes) {
+	    maxDecodedBytes = decodedBytes;
+	    cocos2d::log("[IMG-DECODE-PEAK] file=%s width=%d height=%d decoded=%lld bytes",
+	        this->getFilename(), img.getWidth(), img.getHeight(),
+	        decodedBytes);
+	}
 // #AGTK-NX #AGTK-WIN
 #if defined(USE_BG_PROJECT_LOAD) || defined(USE_PRELOAD_TEX)
 	}

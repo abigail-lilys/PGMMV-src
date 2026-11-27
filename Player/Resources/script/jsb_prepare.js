@@ -337,3 +337,19 @@ jsb.unregisterChildRefsForNode = function (node, recursive) {
         }
     }
 };
+
+// PGMMV_GLOBAL_PROBE_V1
+this.__pgmmv_probe_ran = "JSB_PREPARE_RAN";
+this.__pgmmv_probe_this_is_window = (this === window);
+this.__pgmmv_probe_cc_type = typeof cc;
+this.__pgmmv_probe_class_type =
+    (typeof cc === "undefined") ? "NO_CC" : typeof cc.Class;
+this.__pgmmv_probe_class_extend_type =
+    (typeof cc === "undefined" || typeof cc.Class === "undefined")
+        ? "NO_CLASS" : typeof cc.Class.extend;
+
+// PGMMV_GLOBAL_IDENTITY_TEST_V1
+this.__pgmmv_js_saw_cpp_probe =
+    (typeof this.__pgmmv_cpp_probe === "undefined")
+        ? "CPP_PROBE_MISSING"
+        : this.__pgmmv_cpp_probe;

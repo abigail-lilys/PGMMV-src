@@ -193,6 +193,11 @@ public:
     */
     bool initWithImageFile(const std::string& path);
 
+    // AETHER_PGMMV_IMAGE_HEADER_ONLY_V1
+    // Reads PNG/JPEG dimensions without allocating decoded pixels.
+    // This Image is metadata-only and must not be used to create textures.
+    bool initWithImageFileHeader(const std::string& path);
+
     /**
     @brief Load image from stream buffer.
     @param data  stream buffer which holds the image data.

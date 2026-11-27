@@ -1619,9 +1619,24 @@ void GameScene::calcMoveEffect(bool isPreMove, bool isPortal, bool needSceneChan
 // #AGTK-NX #AGTK-WIN
 #ifdef USE_CLEAR_UNUSED_TEX
 				// 前シーンの不要なテクスチャキャッシュをクリア
+				auto textureCache = CCDirector::getInstance()->getTextureCache();
+				auto textureSummary = [textureCache]() {
+				    #ifdef USE_AGTK
+                    std::string info = textureCache->getCachedTextureAuditInfo();
+#else
+                    std::string info = textureCache->getCachedTextureInfo();
+#endif
+				    const auto pos = info.rfind("TextureCache dumpDebugInfo:");
+				    if (pos != std::string::npos) info = info.substr(pos);
+				    return info;
+				};
+				cocos2d::log("[TEX-AUDIT] phase=before_cleanup %s",
+				    textureSummary().c_str());
 				gameManager->markLoadResources();
-				CCDirector::getInstance()->getTextureCache()->removeUnusedVolatileTextures();
+				textureCache->removeUnusedVolatileTextures();
 				gameManager->unmarkLoadResources();
+				cocos2d::log("[TEX-AUDIT] phase=after_cleanup %s",
+				    textureSummary().c_str());
 				//CCLOG("# texInfo %s", CCDirector::getInstance()->getTextureCache()->getCachedTextureInfo().c_str());
 #endif
 			}
@@ -1653,7 +1668,7 @@ void GameScene::calcMoveEffect(bool isPreMove, bool isPortal, bool needSceneChan
 					}
 				}
 				else {
-					if (gameManager->getStateLoadResouces() != GameManager::EnumStateLoadResources::LOAD) {
+					if (gameManager->getStateLoadResouces() == GameManager::EnumStateLoadResources::NONE) {
 						gameManager->setStateLoading(GameManager::kStateLoadingTimerEnd);
 					} else
 					if (gameManager->getLoadingTimer()->getSeconds() > 1.0f) {//一秒
@@ -1675,14 +1690,15 @@ void GameScene::calcMoveEffect(bool isPreMove, bool isPortal, bool needSceneChan
 				break; }
 			case GameManager::kStateLoadingShowUpdate: {
 				if (debugManager->getShowLoadingScene()) {
-					if (gameManager->getLoadingTimer()->getSeconds() > 2.0f) {
+					if (gameManager->getLoadingTimer()->getSeconds() > 2.0f &&
+						gameManager->getStateLoadResouces() == GameManager::EnumStateLoadResources::NONE) {
 						loadingScene->stop();
 						this->removeChild(loadingScene);
 						gameManager->setStateLoading(GameManager::kStateLoadingShowEnd);
 					}
 				}
 				else {
-					if (gameManager->getStateLoadResouces() != GameManager::EnumStateLoadResources::LOAD) {
+					if (gameManager->getStateLoadResouces() == GameManager::EnumStateLoadResources::NONE) {
 						loadingScene->stop();
 						this->removeChild(loadingScene);
 						gameManager->setStateLoading(GameManager::kStateLoadingShowEnd);

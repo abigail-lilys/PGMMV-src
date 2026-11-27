@@ -207,7 +207,8 @@ RenderTextureCtrl::RenderTextureCtrl()
 	_baseNode = nullptr;
 // #AGTK-NX
 #if CC_TARGET_PLATFORM != CC_PLATFORM_NX
-	_clearColor = cocos2d::Color4F(0, 0, 0, 0); // [wasm-port] std ctor/ptr
+	_clearColor = cocos2d::Color4F(0, 0, 0, 0);
+ // [wasm-port] std ctor/ptr
 #else
 #endif
 	_renderTextureSize = cocos2d::Size::ZERO;
@@ -876,7 +877,8 @@ void RenderTextureCtrl::updateTopMostWithMenu(float delta, cocos2d::Mat4 *viewMa
 					auto renderTextureCtrl = sceneTopMost->getRenderTexture();
 // #AGTK-NX
 #if CC_TARGET_PLATFORM != CC_PLATFORM_NX
-					if (renderTextureCtrl == nullptr) { //[wasm-port]ptr-null
+					if (renderTextureCtrl == nullptr) {
+ //[wasm-port]ptr-null
 #else
 #endif
 						// 背景シーン
@@ -1101,7 +1103,8 @@ void RenderTextureCtrl::updateTopMostWithMenuIgnoreMenu(float delta, cocos2d::Ma
 // #AGTK-NX
 #if (CC_TARGET_PLATFORM == CC_PLATFORM_NX)
 #else
-					if (renderTextureCtrl == nullptr) { //[wasm-port]ptr-null
+					if (renderTextureCtrl == nullptr) {
+ //[wasm-port]ptr-null
 #endif
 						// 背景シーン
 						auto sceneBackground = scene->getSceneBackground();
@@ -1444,6 +1447,8 @@ void RenderTextureCtrl::update(float delta, cocos2d::Mat4 *viewMatrix, cocos2d::
 		auto particleManager = ParticleManager::getInstance();
 		auto clearColor = _objRenderTexture->getClearColor();
 		_objRenderTexture->getSprite()->setVisible(true);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA); // 强制预乘混合
 		_objRenderTexture->setKeepMatrix(true);
 		_objRenderTexture->beginWithClear(clearColor.r, clearColor.g, clearColor.b, clearColor.a);
 		{

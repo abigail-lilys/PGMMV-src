@@ -730,6 +730,191 @@ bool Image::initWithImageFile(const std::string& path)
     return ret;
 }
 
+// AETHER_PGMMV_IMAGE_HEADER_ONLY_V1
+bool Image::initWithImageFileHeader(const std::string& path)
+{
+    _filePath = FileUtils::getInstance()->fullPathForFilename(path);
+
+    Data fileData = FileUtils::getInstance()->getDataFromFile(_filePath);
+    if (fileData.isNull()) {
+        return false;
+    }
+
+    const unsigned char* imageData = fileData.getBytes();
+    ssize_t imageDataLen = fileData.getSize();
+
+    if (imageData == nullptr || imageDataLen <= 0) {
+        return false;
+    }
+
+    unsigned char* unpackedData = nullptr;
+
+    // Preserve the same CCZ/GZip container handling as initWithImageData().
+    if (ZipUtils::isCCZBuffer(imageData, imageDataLen)) {
+        imageDataLen = ZipUtils::inflateCCZBuffer(
+            imageData, imageDataLen, &unpackedData
+        );
+
+        if (imageDataLen <= 0 || unpackedData == nullptr) {
+            if (unpackedData != nullptr) {
+                free(unpackedData);
+            }
+            return false;
+        }
+
+        imageData = unpackedData;
+    }
+    else if (ZipUtils::isGZipBuffer(imageData, imageDataLen)) {
+        imageDataLen = ZipUtils::inflateMemory(
+            const_cast<unsigned char*>(imageData),
+            imageDataLen,
+            &unpackedData
+        );
+
+        if (imageDataLen <= 0 || unpackedData == nullptr) {
+            if (unpackedData != nullptr) {
+                free(unpackedData);
+            }
+            return false;
+        }
+
+        imageData = unpackedData;
+    }
+
+    bool success = false;
+    unsigned int width = 0;
+    unsigned int height = 0;
+
+    const Format format = detectFormat(imageData, imageDataLen);
+
+    auto readBE32 = [](const unsigned char* p) -> unsigned int {
+        return
+            (static_cast<unsigned int>(p[0]) << 24) |
+            (static_cast<unsigned int>(p[1]) << 16) |
+            (static_cast<unsigned int>(p[2]) << 8) |
+            static_cast<unsigned int>(p[3]);
+    };
+
+    if (format == Format::PNG) {
+        static const unsigned char pngSignature[8] = {
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a
+        };
+
+        // PNG signature + first IHDR chunk header and dimensions.
+        if (imageDataLen >= 24 &&
+            memcmp(imageData, pngSignature, 8) == 0 &&
+            readBE32(imageData + 8) == 13 &&
+            memcmp(imageData + 12, "IHDR", 4) == 0) {
+
+            width = readBE32(imageData + 16);
+            height = readBE32(imageData + 20);
+
+            success =
+                width > 0 &&
+                height > 0 &&
+                width <= 0x7fffffffU &&
+                height <= 0x7fffffffU;
+        }
+    }
+    else if (format == Format::JPG) {
+        // JPEG marker scan. Find a Start Of Frame segment without
+        // starting decompression or allocating a pixel buffer.
+        const size_t length = static_cast<size_t>(imageDataLen);
+
+        if (length >= 4 &&
+            imageData[0] == 0xff &&
+            imageData[1] == 0xd8) {
+
+            size_t pos = 2;
+
+            while (pos < length) {
+                if (imageData[pos] != 0xff) {
+                    break;
+                }
+
+                // Skip marker fill bytes.
+                while (pos < length && imageData[pos] == 0xff) {
+                    ++pos;
+                }
+
+                if (pos >= length) {
+                    break;
+                }
+
+                const unsigned char marker = imageData[pos++];
+
+                // Byte-stuffed data is not expected before SOS.
+                if (marker == 0x00) {
+                    break;
+                }
+
+                // Standalone markers have no length field.
+                if (marker == 0xd8 ||
+                    marker == 0x01 ||
+                    (marker >= 0xd0 && marker <= 0xd7)) {
+                    continue;
+                }
+
+                if (marker == 0xd9 || marker == 0xda) {
+                    break;
+                }
+
+                if (pos + 2 > length) {
+                    break;
+                }
+
+                const unsigned int segmentLength =
+                    (static_cast<unsigned int>(imageData[pos]) << 8) |
+                    static_cast<unsigned int>(imageData[pos + 1]);
+
+                if (segmentLength < 2 ||
+                    segmentLength > length - pos) {
+                    break;
+                }
+
+                const bool isSOF =
+                    (marker >= 0xc0 && marker <= 0xc3) ||
+                    (marker >= 0xc5 && marker <= 0xc7) ||
+                    (marker >= 0xc9 && marker <= 0xcb) ||
+                    (marker >= 0xcd && marker <= 0xcf);
+
+                if (isSOF) {
+                    // Length(2), precision(1), height(2), width(2).
+                    if (segmentLength >= 8) {
+                        height =
+                            (static_cast<unsigned int>(imageData[pos + 3]) << 8) |
+                            static_cast<unsigned int>(imageData[pos + 4]);
+
+                        width =
+                            (static_cast<unsigned int>(imageData[pos + 5]) << 8) |
+                            static_cast<unsigned int>(imageData[pos + 6]);
+
+                        success = width > 0 && height > 0;
+                    }
+                    break;
+                }
+
+                pos += segmentLength;
+            }
+        }
+    }
+
+    if (unpackedData != nullptr) {
+        free(unpackedData);
+    }
+
+    if (!success) {
+        return false;
+    }
+
+    _fileType = format;
+    _width = static_cast<int>(width);
+    _height = static_cast<int>(height);
+
+    // Intentionally leave _data null and _dataLen zero.
+    return true;
+}
+
 // #AGTK-NX #AGTK-WIN
 #if defined(USE_AGTK) && IMAGE_MT_INIT
 bool Image::initWithImageFileLateSetup(const std::string& path, void* arg)

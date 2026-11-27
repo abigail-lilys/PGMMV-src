@@ -182,95 +182,71 @@ bool register_agtk_sceneInstanceBase(JSContext *cx, JS::HandleObject object)
 
 bool js_sceneInstances_getCurrent(JSContext *cx, unsigned argc, JS::Value *vp)
 {
-	JS::CallArgs args = CallArgsFromVp(argc, vp);
+    JS::CallArgs args = CallArgsFromVp(argc, vp);
     args.rval().set(JS::NullValue());
-#if 0
-	auto len = args.length();
-	if (len < 1) {
-		return false;
-	}
-	auto &&v = args[0];
-	if (!v.isNumber()) {
-		return false;
-	}
-#endif
-	auto sceneInstance = GameManager::getInstance()->getCurrentScene();
-	if (!sceneInstance) {
-		return true;
-	}
-	static JSClass sceneInstance_class = {
-		"sceneInstance",
-		0,
-		/* All of these can be replaced with the corresponding JS_*Stub
-		function pointers. */
-		JS_PropertyStub,
-		JS_DeletePropertyStub,
-		JS_PropertyStub,
-		JS_StrictPropertyStub,
-		JS_EnumerateStub,
-		JS_ResolveStub,
-		JS_ConvertStub,
-		nullptr, nullptr, nullptr, nullptr, nullptr
-	};
-// #AGTK-NX
-#ifdef USE_SAR_OPTIMIZE_7
-	auto sc = ScriptingCore::getInstance();
-	auto _global = sc->getGlobalObject();
-	JS::RootedObject gobj(cx, _global);
-	JSAutoCompartment ac(cx, gobj);
 
-	JS::RootedObject ns(cx);
-	JS::MutableHandleObject jsObj = &ns;
-	JS::RootedValue nsval(cx);
-	JS_GetProperty(cx, gobj, "Agtk", &nsval);
-	JS::RootedValue rv(cx);
-	bool ret = false;
-	if (nsval == JSVAL_VOID) {
-		return false;
-	}
-	jsObj.set(nsval.toObjectOrNull());
-	JS::RootedValue rsceneInstanceBaseVal(cx);
-	JS_GetProperty(cx, jsObj, "sceneInstanceBase", &rsceneInstanceBaseVal);
-	if (!rsceneInstanceBaseVal.isObject()) {
-		return false;
-	}
+    auto sceneInstance = GameManager::getInstance()->getCurrentScene();
+    if (!sceneInstance) {
+        return true;
+    }
 
-	JSObject* sceneInstanceBase = rsceneInstanceBaseVal.get().toObjectOrNull();
-	JS::RootedObject rsceneInstanceBase(cx, sceneInstanceBase);
-#endif
-	JS::RootedObject jsthis(cx, args.thisv().toObjectOrNull());
-// #AGTK-NX
-#ifdef USE_SAR_OPTIMIZE_7
-	auto sceneInstanceObj = JS_DefineObject(cx, jsthis, "sceneInstance", &sceneInstance_class, rsceneInstanceBase, JSPROP_PERMANENT | JSPROP_READONLY | JSPROP_ENUMERATE);
-#else
-	auto sceneInstanceObj = JS_DefineObject(cx, jsthis, "sceneInstance", &sceneInstance_class, JS::NullPtr(), JSPROP_PERMANENT | JSPROP_READONLY | JSPROP_ENUMERATE);
-#endif
-	CCASSERT(sceneInstanceObj, "sceneInstanceObj should not be nullptr");
-	JS::RootedObject rsceneInstance(cx, sceneInstanceObj);
-// #AGTK-NX
-#ifndef USE_SAR_OPTIMIZE_7
-	static JSFunctionSpec sceneInstance_methods[] = {
-		{ "getLayerByIndex", js_sceneInstance_getLayerByIndex, 0, 0, 0 },
-		{ "getMenuLayerById", js_sceneInstance_getMenuLayerById, 0, 0, 0 },
-		{ "getCurrentCameraTargetPos", js_sceneInstance_getCurrentCameraTargetPos, 0, 0, 0 },
-		{ "getCurrentCameraDisplayScale", js_sceneInstance_getCurrentCameraDisplayScale, 0, 0, 0 },
-		{ NULL },
-	};
-	JS_DefineFunctions(cx, rsceneInstance, sceneInstance_methods);
-#endif
-	//JS::RootedValue rsceneInstanceId(cx, JS::Int32Value(sceneInstance->id));
-	//JS_DefineProperty(cx, rsceneInstance, "id", rsceneInstanceId, JSPROP_ENUMERATE | JSPROP_PERMANENT);
-	JS::RootedValue rval(cx);
-	rval.setInt32(sceneInstance->getSceneData()->getId());
-	JS_DefineProperty(cx, rsceneInstance, "sceneId", rval, JSPROP_ENUMERATE | JSPROP_PERMANENT);
-	//rval.setInt32(sceneInstanceId);
-	//JS_SetProperty(cx, rsceneInstance, "sceneInstanceId", rval);
-	//JS_SetProperty(cx, rsceneInstance, "sceneId", rval);
-	args.rval().set(OBJECT_TO_JSVAL(sceneInstanceObj));
-	return true;
+    auto sceneData = sceneInstance->getSceneData();
+    if (!sceneData) {
+        return true;
+    }
+
+    // Diagnostic: custom JSClass with all callbacks disabled.
+    static JSClass sceneInstance_class = {
+        "sceneInstance",
+        0,
+        JS_PropertyStub,
+        JS_DeletePropertyStub,
+        JS_PropertyStub,
+        JS_StrictPropertyStub,
+        JS_EnumerateStub,
+        JS_ResolveStub,
+        JS_ConvertStub,
+        JSCLASS_NO_OPTIONAL_MEMBERS
+    };
+
+    JS::RootedObject jsthis(
+        cx,
+        args.thisv().toObjectOrNull()
+    );
+    if (!jsthis) {
+        return false;
+    }
+
+    JS::RootedObject rsceneInstance(
+        cx,
+        JS_NewObject(
+            cx,
+            &sceneInstance_class,
+            JS::NullPtr(),
+            jsthis
+        )
+    );
+
+    if (!rsceneInstance) {
+        return false;
+    }
+
+    JS::RootedValue rval(cx);
+    rval.setInt32(sceneData->getId());
+
+    if (!JS_DefineProperty(
+            cx,
+            rsceneInstance,
+            "sceneId",
+            rval,
+            JSPROP_ENUMERATE | JSPROP_PERMANENT)) {
+        return false;
+    }
+
+    args.rval().setObject(*rsceneInstance);
+    return true;
 }
 
-// sceneInstance
 bool js_sceneInstance_getLayerByIndex(JSContext *cx, unsigned argc, JS::Value *vp)
 {
 	//arg1: <int: レイヤーインデックス>

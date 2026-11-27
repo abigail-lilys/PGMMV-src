@@ -251,6 +251,11 @@ void TextureCache::addImageAsync(const std::string &path, const std::function<vo
         std::lock_guard<std::mutex> lock(_responseMutex);
         _responseQueue.push_back(data);
     }
+
+    // PGMMV_WASM_DRAIN_IMMEDIATE_V1: no loader thread in wasm, so the decoded Image
+    // would otherwise sit in _responseQueue until the next scheduler tick. Convert it to a
+    // texture and free the decoded pixels right away (peak = one image, not all images).
+    this->addImageAsyncCallBack(0.0f);
 #else
     std::unique_lock<std::mutex> ul(_requestMutex);
     _requestQueue.push_back(data);
@@ -420,6 +425,14 @@ void TextureCache::addImageAsyncCallBack(float /*dt*/)
 
 Texture2D * TextureCache::addImage(const std::string &path)
 {
+    {
+        static int _texAddCount = 0;
+        if (_texAddCount < 500) {
+            _texAddCount++;
+            cocos2d::log("[TEX] add path=%s", path.c_str());
+        }
+    }
+
     Texture2D * texture = nullptr;
     Image* image = nullptr;
     // Split up directory and filename
@@ -580,7 +593,9 @@ bool TextureCache::reloadTexture(const std::string& fileName)
 
     CC_SAFE_RELEASE(image);
 
+    
     return ret;
+
 }
 
 // TextureCache - Remove
@@ -708,6 +723,108 @@ void TextureCache::waitForQuit()
     ul.unlock();
     if (_loadingThread) _loadingThread->join();
 }
+
+#ifdef USE_AGTK
+// AETHER_PGMMV_TEXTURE_AUDIT_V1
+std::string TextureCache::getCachedTextureAuditInfo() const
+{
+    unsigned int totalCount = 0;
+    unsigned int volatileCount = 0;
+    unsigned int nonVolatileCount = 0;
+
+    unsigned int volatileRef1Count = 0;
+    unsigned int volatileRefMoreCount = 0;
+    unsigned int nonVolatileRef1Count = 0;
+    unsigned int nonVolatileRefMoreCount = 0;
+
+    unsigned long long totalBytes = 0;
+    unsigned long long volatileBytes = 0;
+    unsigned long long nonVolatileBytes = 0;
+
+    unsigned long long volatileRef1Bytes = 0;
+    unsigned long long volatileRefMoreBytes = 0;
+    unsigned long long nonVolatileRef1Bytes = 0;
+    unsigned long long nonVolatileRefMoreBytes = 0;
+
+    for (const auto& item : _textures) {
+        Texture2D* tex = item.second;
+        if (tex == nullptr) {
+            continue;
+        }
+
+        const unsigned long long bpp =
+            static_cast<unsigned long long>(
+                tex->getBitsPerPixelForFormat()
+            );
+
+        const unsigned long long bytes =
+            static_cast<unsigned long long>(tex->getPixelsWide()) *
+            static_cast<unsigned long long>(tex->getPixelsHigh()) *
+            bpp / 8ULL;
+
+        const unsigned long refCount = tex->getReferenceCount();
+        const bool isVolatile = tex->getVolatileCache();
+
+        ++totalCount;
+        totalBytes += bytes;
+
+        if (isVolatile) {
+            ++volatileCount;
+            volatileBytes += bytes;
+
+            if (refCount == 1) {
+                ++volatileRef1Count;
+                volatileRef1Bytes += bytes;
+            }
+            else if (refCount > 1) {
+                ++volatileRefMoreCount;
+                volatileRefMoreBytes += bytes;
+            }
+        }
+        else {
+            ++nonVolatileCount;
+            nonVolatileBytes += bytes;
+
+            if (refCount == 1) {
+                ++nonVolatileRef1Count;
+                nonVolatileRef1Bytes += bytes;
+            }
+            else if (refCount > 1) {
+                ++nonVolatileRefMoreCount;
+                nonVolatileRefMoreBytes += bytes;
+            }
+        }
+    }
+
+    char buffer[1024];
+    snprintf(
+        buffer,
+        sizeof(buffer),
+        "TextureCacheAudit: entries=%u total=%.2fMB "
+        "volatile=%u/%.2fMB [rc1=%u/%.2fMB rcMore=%u/%.2fMB] "
+        "nonvolatile=%u/%.2fMB [rc1=%u/%.2fMB rcMore=%u/%.2fMB]",
+        totalCount,
+        totalBytes / (1024.0 * 1024.0),
+        volatileCount,
+        volatileBytes / (1024.0 * 1024.0),
+        volatileRef1Count,
+        volatileRef1Bytes / (1024.0 * 1024.0),
+        volatileRefMoreCount,
+        volatileRefMoreBytes / (1024.0 * 1024.0),
+        nonVolatileCount,
+        nonVolatileBytes / (1024.0 * 1024.0),
+        nonVolatileRef1Count,
+        nonVolatileRef1Bytes / (1024.0 * 1024.0),
+        nonVolatileRefMoreCount,
+        nonVolatileRefMoreBytes / (1024.0 * 1024.0)
+    );
+
+    
+
+
+    return buffer;
+}
+#endif
 
 std::string TextureCache::getCachedTextureInfo() const
 {

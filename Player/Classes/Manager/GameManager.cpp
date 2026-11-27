@@ -1256,8 +1256,10 @@ void GameManager::serialize()
 				continue;
 			}
 			rapidjson::Value obj(rapidjson::kObjectType);
-			obj.AddMember("id", v->getId(), allocator); //[wasm-port]addmember-literal
-			obj.AddMember("value", v->getValue(), allocator); //[wasm-port]addmember-literal
+			obj.AddMember("id", v->getId(), allocator);
+ //[wasm-port]addmember-literal
+			obj.AddMember("value", v->getValue(), allocator);
+ //[wasm-port]addmember-literal
 			variableList.PushBack(obj, allocator);
 		}
 	}
@@ -1273,8 +1275,10 @@ void GameManager::serialize()
 				continue;
 			}
 			rapidjson::Value obj(rapidjson::kObjectType);
-			obj.AddMember("id", v->getId(), allocator); //[wasm-port]addmember-literal
-			obj.AddMember("value", v->getValue(), allocator); //[wasm-port]addmember-literal
+			obj.AddMember("id", v->getId(), allocator);
+ //[wasm-port]addmember-literal
+			obj.AddMember("value", v->getValue(), allocator);
+ //[wasm-port]addmember-literal
 			switchList.PushBack(obj, allocator);
 		}
 	}
@@ -1727,9 +1731,12 @@ void GameManager::saveData()
 		rapidjson::Value objJson(rapidjson::kObjectType);
 // #AGTK-NX
 #if CC_TARGET_PLATFORM != CC_PLATFORM_NX
-		objJson.AddMember("objectId", obj->getObjectData()->getId(), allocator); //[wasm-port]addmember-literal
-		objJson.AddMember("instanceId", obj->getInstanceId(), allocator); //[wasm-port]addmember-literal
-		objJson.AddMember("layerId", obj->getLayerId(), allocator); //[wasm-port]addmember-literal
+		objJson.AddMember("objectId", obj->getObjectData()->getId(), allocator);
+ //[wasm-port]addmember-literal
+		objJson.AddMember("instanceId", obj->getInstanceId(), allocator);
+ //[wasm-port]addmember-literal
+		objJson.AddMember("layerId", obj->getLayerId(), allocator);
+ //[wasm-port]addmember-literal
 
 		auto pos = obj->getPosition();
 		// 「カメラとの位置関係を固定する」設定時は、カメラ位置からの差分をポジションに設定する。
@@ -1737,27 +1744,41 @@ void GameManager::saveData()
 			pos = obj->getObjectPosInCamera();
 		}
 
-		objJson.AddMember("px", pos.x, allocator); //[wasm-port]addmember-literal
-		objJson.AddMember("py", pos.y, allocator); //[wasm-port]addmember-literal
-		objJson.AddMember("sx", obj->getScaleX(), allocator); //[wasm-port]addmember-literal
-		objJson.AddMember("sy", obj->getScaleY(), allocator); //[wasm-port]addmember-literal
-		objJson.AddMember("sceneId", obj->getSceneIdOfFirstCreated(), allocator); //[wasm-port]addmember-literal
-		objJson.AddMember("currentSceneId", obj->getSceneLayer()->getSceneData()->getId(), allocator); //[wasm-port]addmember-literal
-		objJson.AddMember("scenePartsId", obj->getScenePartsId(), allocator); //[wasm-port]addmember-literal
+		objJson.AddMember("px", pos.x, allocator);
+ //[wasm-port]addmember-literal
+		objJson.AddMember("py", pos.y, allocator);
+ //[wasm-port]addmember-literal
+		objJson.AddMember("sx", obj->getScaleX(), allocator);
+ //[wasm-port]addmember-literal
+		objJson.AddMember("sy", obj->getScaleY(), allocator);
+ //[wasm-port]addmember-literal
+		objJson.AddMember("sceneId", obj->getSceneIdOfFirstCreated(), allocator);
+ //[wasm-port]addmember-literal
+		objJson.AddMember("currentSceneId", obj->getSceneLayer()->getSceneData()->getId(), allocator);
+ //[wasm-port]addmember-literal
+		objJson.AddMember("scenePartsId", obj->getScenePartsId(), allocator);
+ //[wasm-port]addmember-literal
 		auto currentAction = obj->getCurrentObjectAction();
-		objJson.AddMember("initialActionId", (currentAction ? currentAction->getId() : -1), allocator); //[wasm-port]addmember-literal
-		objJson.AddMember("prevActionId", obj->getPrevObjectActionId(), allocator); //[wasm-port]addmember-literal
-		objJson.AddMember("directionNo", obj->getMoveDirection(), allocator); //[wasm-port]addmember-literal
+		objJson.AddMember("initialActionId", (currentAction ? currentAction->getId() : -1), allocator);
+ //[wasm-port]addmember-literal
+		objJson.AddMember("prevActionId", obj->getPrevObjectActionId(), allocator);
+ //[wasm-port]addmember-literal
+		objJson.AddMember("directionNo", obj->getMoveDirection(), allocator);
+ //[wasm-port]addmember-literal
 		{
 			rapidjson::Value initArray(rapidjson::kArrayType);
 			auto moveDirection = obj->getObjectMovement()->getDirectionDirect();
 			initArray.PushBack(moveDirection.x, allocator);
 			initArray.PushBack(moveDirection.y, allocator);
-			objJson.AddMember("moveDirection", initArray, allocator); //[wasm-port]addmember-literal
+			objJson.AddMember("moveDirection", initArray, allocator);
+ //[wasm-port]addmember-literal
 		}
-		objJson.AddMember("courseId", obj->getObjectReappearData()->getInitialCourseId(), allocator); //[wasm-port]addmember-literal
-		objJson.AddMember("coursePointId", obj->getObjectReappearData()->getInitialCoursePointId(), allocator); //[wasm-port]addmember-literal
-		objJson.AddMember("takeOverAnimMotionId", obj->getTakeOverAnimMotionId(), allocator); //[wasm-port]addmember-literal
+		objJson.AddMember("courseId", obj->getObjectReappearData()->getInitialCourseId(), allocator);
+ //[wasm-port]addmember-literal
+		objJson.AddMember("coursePointId", obj->getObjectReappearData()->getInitialCoursePointId(), allocator);
+ //[wasm-port]addmember-literal
+		objJson.AddMember("takeOverAnimMotionId", obj->getTakeOverAnimMotionId(), allocator);
+ //[wasm-port]addmember-literal
 #else
 #endif
 		objJson.AddMember("playData", obj->getPlayObjectData()->json(allocator), allocator);
@@ -1786,7 +1807,8 @@ void GameManager::saveData()
 					colorJson.AddMember("a", color.a, allocator);
 // #AGTK-NX
 #if CC_TARGET_PLATFORM != CC_PLATFORM_NX
-					shaderData.AddMember("color", colorJson, allocator); //[wasm-port]addmember-literal
+					shaderData.AddMember("color", colorJson, allocator);
+ //[wasm-port]addmember-literal
 #else
 #endif
 				}
@@ -2043,32 +2065,46 @@ void GameManager::saveData()
 			rapidjson::Value initObj(rapidjson::kObjectType);
 // #ATGK-NX
 #if CC_TARGET_PLATFORM != CC_PLATFORM_NX
-			initObj.AddMember("id", data->getObjectId(), allocator); //[wasm-port]addmember-literal
-			initObj.AddMember("layerId", data->getSceneLayerId(), allocator); //[wasm-port]addmember-literal
-			initObj.AddMember("px", data->getPosition().x, allocator); //[wasm-port]addmember-literal
-			initObj.AddMember("py", data->getPosition().y, allocator); //[wasm-port]addmember-literal
-			initObj.AddMember("sx", data->getScale().x, allocator); //[wasm-port]addmember-literal
-			initObj.AddMember("sy", data->getScale().y, allocator); //[wasm-port]addmember-literal
+			initObj.AddMember("id", data->getObjectId(), allocator);
+ //[wasm-port]addmember-literal
+			initObj.AddMember("layerId", data->getSceneLayerId(), allocator);
+ //[wasm-port]addmember-literal
+			initObj.AddMember("px", data->getPosition().x, allocator);
+ //[wasm-port]addmember-literal
+			initObj.AddMember("py", data->getPosition().y, allocator);
+ //[wasm-port]addmember-literal
+			initObj.AddMember("sx", data->getScale().x, allocator);
+ //[wasm-port]addmember-literal
+			initObj.AddMember("sy", data->getScale().y, allocator);
+ //[wasm-port]addmember-literal
 #else
 #endif
 			initObj.AddMember("playData", data->getPlayObjectData()->json(allocator), allocator);
 
 // #AGTK-NX
 #if CC_TARGET_PLATFORM != CC_PLATFORM_NX
-			initObj.AddMember("sceneId", data->getSceneId(), allocator); //[wasm-port]addmember-literal
-			initObj.AddMember("scenePartsId", data->getScenePartsId(), allocator); //[wasm-port]addmember-literal
-			initObj.AddMember("actionNo", data->getActionNo(), allocator); //[wasm-port]addmember-literal
-			initObj.AddMember("directionNo", data->getDirectionNo(), allocator); //[wasm-port]addmember-literal
-			initObj.AddMember("dispDirection", data->getDispDirection(), allocator); //[wasm-port]addmember-literal
+			initObj.AddMember("sceneId", data->getSceneId(), allocator);
+ //[wasm-port]addmember-literal
+			initObj.AddMember("scenePartsId", data->getScenePartsId(), allocator);
+ //[wasm-port]addmember-literal
+			initObj.AddMember("actionNo", data->getActionNo(), allocator);
+ //[wasm-port]addmember-literal
+			initObj.AddMember("directionNo", data->getDirectionNo(), allocator);
+ //[wasm-port]addmember-literal
+			initObj.AddMember("dispDirection", data->getDispDirection(), allocator);
+ //[wasm-port]addmember-literal
 			{
 				rapidjson::Value initArray(rapidjson::kArrayType);
 				auto moveDirection = data->getMoveDirection();
 				initArray.PushBack(moveDirection.x, allocator);
 				initArray.PushBack(moveDirection.y, allocator);
-				initObj.AddMember("moveDirection", initArray, allocator); //[wasm-port]addmember-literal
+				initObj.AddMember("moveDirection", initArray, allocator);
+ //[wasm-port]addmember-literal
 			}
-			initObj.AddMember("takeOverAnimMotionId", data->getTakeOverAnimMotionId(), allocator); //[wasm-port]addmember-literal
-			initObj.AddMember("sceneIdOfFirstCreated", data->getSceneIdOfFirstCreated(), allocator); //[wasm-port]addmember-literal
+			initObj.AddMember("takeOverAnimMotionId", data->getTakeOverAnimMotionId(), allocator);
+ //[wasm-port]addmember-literal
+			initObj.AddMember("sceneIdOfFirstCreated", data->getSceneIdOfFirstCreated(), allocator);
+ //[wasm-port]addmember-literal
 #else
 #endif
 
@@ -2088,20 +2124,34 @@ void GameManager::saveData()
 			rapidjson::Value dataJson(rapidjson::kObjectType);
 // #AGTK-NX
 #if CC_TARGET_PLATFORM != CC_PLATFORM_NX
-			dataJson.AddMember("sceneId", data->getSceneId(), allocator);//sceneId //[wasm-port]addmember-literal
-			dataJson.AddMember("scenePartsId", data->getScenePartsId(), allocator);//scenePartsId //[wasm-port]addmember-literal
-			dataJson.AddMember("sceneLayerId", data->getSceneLayerId(), allocator);//sceneLayerId //[wasm-port]addmember-literal
-			dataJson.AddMember("objectId", data->getObjectId(), allocator);//objectId //[wasm-port]addmember-literal
-			dataJson.AddMember("initialActionId", data->getInitialActionId(), allocator);//initialActionId //[wasm-port]addmember-literal
-			dataJson.AddMember("initialPositionX", data->getInitialPosition().x, allocator);//initialPosition.x //[wasm-port]addmember-literal
-			dataJson.AddMember("initialPositionY", data->getInitialPosition().y, allocator);//initialPosition.y //[wasm-port]addmember-literal
-			dataJson.AddMember("initialScaleX", data->getInitialScale().y, allocator);//initialScale.x //[wasm-port]addmember-literal
-			dataJson.AddMember("initialScaleY", data->getInitialScale().y, allocator);//initialScale.y //[wasm-port]addmember-literal
-			dataJson.AddMember("initialRotation", data->getInitialRotation(), allocator);//initialRotation //[wasm-port]addmember-literal
-			dataJson.AddMember("initialMoveDirectionId", data->getInitialMoveDirectionId(), allocator);//initialMoveDirectionId //[wasm-port]addmember-literal
-			dataJson.AddMember("reappearFlag", data->getReappearFlag(), allocator);//reappearFlag //[wasm-port]addmember-literal
-			dataJson.AddMember("initialCourseId", data->getInitialCourseId(), allocator);//initialCourseId //[wasm-port]addmember-literal
-			dataJson.AddMember("InitialCoursePointId", data->getInitialCoursePointId(), allocator);//initialCoursePointId //[wasm-port]addmember-literal
+			dataJson.AddMember("sceneId", data->getSceneId(), allocator);//sceneId
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("scenePartsId", data->getScenePartsId(), allocator);//scenePartsId
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("sceneLayerId", data->getSceneLayerId(), allocator);//sceneLayerId
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("objectId", data->getObjectId(), allocator);//objectId
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("initialActionId", data->getInitialActionId(), allocator);//initialActionId
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("initialPositionX", data->getInitialPosition().x, allocator);//initialPosition.x
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("initialPositionY", data->getInitialPosition().y, allocator);//initialPosition.y
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("initialScaleX", data->getInitialScale().y, allocator);//initialScale.x
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("initialScaleY", data->getInitialScale().y, allocator);//initialScale.y
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("initialRotation", data->getInitialRotation(), allocator);//initialRotation
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("initialMoveDirectionId", data->getInitialMoveDirectionId(), allocator);//initialMoveDirectionId
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("reappearFlag", data->getReappearFlag(), allocator);//reappearFlag
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("initialCourseId", data->getInitialCourseId(), allocator);//initialCourseId
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("InitialCoursePointId", data->getInitialCoursePointId(), allocator);//initialCoursePointId
+ //[wasm-port]addmember-literal
 #else
 #endif
 			return dataJson;
@@ -2130,7 +2180,8 @@ void GameManager::saveData()
 			rapidjson::Value dataJson(rapidjson::kObjectType);
 // #AGTK-NX
 #if CC_TARGET_PLATFORM != CC_PLATFORM_NX
-			dataJson.AddMember("sceneId", data->getSceneId(), allocator);//sceneId //[wasm-port]addmember-literal
+			dataJson.AddMember("sceneId", data->getSceneId(), allocator);//sceneId
+ //[wasm-port]addmember-literal
 			dataJson.AddMember("scenePartsId", data->getScenePartsId(), allocator);//scenePartsId //[wasm-port]addmember-literal
 			dataJson.AddMember("sceneLayerId", data->getSceneLayerId(), allocator);//sceneLayerId //[wasm-port]addmember-literal
 			dataJson.AddMember("objectId", data->getObjectId(), allocator);//objectId //[wasm-port]addmember-literal
@@ -2170,20 +2221,34 @@ void GameManager::saveData()
 			rapidjson::Value dataJson(rapidjson::kObjectType);
 			// #AGTK-NX
 #if CC_TARGET_PLATFORM != CC_PLATFORM_NX
-			dataJson.AddMember("sceneId", data->getSceneId(), allocator);//sceneId //[wasm-port]addmember-literal
-			dataJson.AddMember("scenePartsId", data->getScenePartsId(), allocator);//scenePartsId //[wasm-port]addmember-literal
-			dataJson.AddMember("sceneLayerId", data->getSceneLayerId(), allocator);//sceneLayerId //[wasm-port]addmember-literal
-			dataJson.AddMember("objectId", data->getObjectId(), allocator);//objectId //[wasm-port]addmember-literal
-			dataJson.AddMember("initialActionId", data->getInitialActionId(), allocator);//initialActionId //[wasm-port]addmember-literal
-			dataJson.AddMember("initialPositionX", data->getInitialPosition().x, allocator);//initialPosition.x //[wasm-port]addmember-literal
-			dataJson.AddMember("initialPositionY", data->getInitialPosition().y, allocator);//initialPosition.y //[wasm-port]addmember-literal
-			dataJson.AddMember("initialScaleX", data->getInitialScale().y, allocator);//initialScale.x //[wasm-port]addmember-literal
-			dataJson.AddMember("initialScaleY", data->getInitialScale().y, allocator);//initialScale.y //[wasm-port]addmember-literal
-			dataJson.AddMember("initialRotation", data->getInitialRotation(), allocator);//initialRotation //[wasm-port]addmember-literal
-			dataJson.AddMember("initialMoveDirectionId", data->getInitialMoveDirectionId(), allocator);//initialMoveDirectionId //[wasm-port]addmember-literal
-			dataJson.AddMember("reappearFlag", data->getReappearFlag(), allocator);//reappearFlag //[wasm-port]addmember-literal
-			dataJson.AddMember("initialCourseId", data->getInitialCourseId(), allocator);//initialCourseId //[wasm-port]addmember-literal
-			dataJson.AddMember("InitialCoursePointId", data->getInitialCoursePointId(), allocator);//initialCoursePointId //[wasm-port]addmember-literal
+			dataJson.AddMember("sceneId", data->getSceneId(), allocator);//sceneId
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("scenePartsId", data->getScenePartsId(), allocator);//scenePartsId
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("sceneLayerId", data->getSceneLayerId(), allocator);//sceneLayerId
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("objectId", data->getObjectId(), allocator);//objectId
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("initialActionId", data->getInitialActionId(), allocator);//initialActionId
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("initialPositionX", data->getInitialPosition().x, allocator);//initialPosition.x
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("initialPositionY", data->getInitialPosition().y, allocator);//initialPosition.y
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("initialScaleX", data->getInitialScale().y, allocator);//initialScale.x
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("initialScaleY", data->getInitialScale().y, allocator);//initialScale.y
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("initialRotation", data->getInitialRotation(), allocator);//initialRotation
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("initialMoveDirectionId", data->getInitialMoveDirectionId(), allocator);//initialMoveDirectionId
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("reappearFlag", data->getReappearFlag(), allocator);//reappearFlag
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("initialCourseId", data->getInitialCourseId(), allocator);//initialCourseId
+ //[wasm-port]addmember-literal
+			dataJson.AddMember("InitialCoursePointId", data->getInitialCoursePointId(), allocator);//initialCoursePointId
+ //[wasm-port]addmember-literal
 #else
 #endif
 			return dataJson;
@@ -4085,6 +4150,7 @@ void GameManager::loadJsonFile(std::string projectFilePath)
 	PGMMV_STAGE_TRACE("GM_BEFORE_JSON_PARSE");
     doc.Parse(jsonData.c_str());
     PGMMV_STAGE_TRACE("GM_AFTER_JSON_PARSE");
+	std::string().swap(jsonData); // PGMMV_FREE_JSONDATA_V1: 释放 67 MiB
 	bool error = doc.HasParseError();
 	CCLOG("[PGMMV-DIAG] parseError=%d parseCode=%d offset=%lu rootObject=%d",
 	    error ? 1 : 0, (int)doc.GetParseError(),
@@ -4111,6 +4177,7 @@ void GameManager::loadJsonFile(std::string projectFilePath)
 		PGMMV_STAGE_TRACE("GM_BEFORE_SET_PROJECTDATA");
     this->setProjectData(project);
     PGMMV_STAGE_TRACE("GM_AFTER_SET_PROJECTDATA");
+	rapidjson::Document().Swap(doc); // PGMMV_FREE_JSONDATA_V1: 释放 DOM
 		CCLOG("[PGMMV-DIAG] after set=%p", (void*)this->getProjectData());
 	}
 

@@ -240,7 +240,7 @@ void main()                                                                     
     if (maskTexColor.a >= 0.1) {                                                 \n\
         darkColor = vec3(texColor.r, texColor.g, texColor.b);                    \n\
     } else if (maskTexColor.a > 0.0) {                                           \n\
-        darkColor = mix(texColor.rgb, vec3(0.0, 0.0, 0.0), (1.0 - maskTexColor.a * 10) * Intensity); \n\
+        darkColor = mix(texColor.rgb, vec3(0.0, 0.0, 0.0), (1.0 - maskTexColor.a * 10.0) * Intensity); \n\
     }                                                                            \n\
     gl_FragColor = vec4(darkColor, texColor.a) * v_fragmentColor;                \n\
 }                                                                                \n\
@@ -262,7 +262,7 @@ void main()                                                                     
     vec4 texColor = texture2D(CC_Texture0, v_texCoord);                          \n\
     if ( texColor.a <= 0.0 )                                                     \n\
         discard;                                                                 \n\
-    texColor *= (1 - Intensity);                                                 \n\
+    texColor *= (1.0 - Intensity);                                                 \n\
     gl_FragColor = texColor * v_fragmentColor;                                   \n\
 }                                                                                \n\
 ";

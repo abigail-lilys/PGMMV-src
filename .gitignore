@@ -21,3 +21,14 @@ Player/proj.linux/
 Player/proj.tizen/
 Player/proj.win10/
 Player/proj.win8.1-universal/
+
+# 调试/备份文件
+*.backup
+*.backup.*
+*.with-trace
+*.with-*-trace
+*.lf-worktree-backup
+*.broken-*
+*.after-*
+*.r[0-9]*-backup
+*.unused

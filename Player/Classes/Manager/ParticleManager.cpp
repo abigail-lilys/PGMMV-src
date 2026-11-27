@@ -711,7 +711,7 @@ void ParticleManager::update(float delta, GameManager *gameManager)
 
 				//! カメラの移動、拡縮、回転を反映するため
 				//! 背景と各シーンレイヤーをオフスクリーンにレンダリング
-				_sceneLayerRenderTexture->beginWithClear(0, 0, 0, 1);
+				_sceneLayerRenderTexture->beginWithClear(0, 0, 0, 0);
 				{
 					auto renderTextureCtrl = scene->getSceneTopMost()->getRenderTexture();
 					auto withMenuRenderTextureCtrl = scene->getSceneTopMost()->getWithMenuRenderTexture();
@@ -802,7 +802,7 @@ void ParticleManager::update(float delta, GameManager *gameManager)
 
 				//! オフスクリーンテクスチャとメニューシーンを
 				//! キャプチャ用テクスチャにレンダリング
-				_renderTexture->beginWithClear(0, 0, 0, 1);
+				_renderTexture->beginWithClear(0, 0, 0, 0);
 				{
 					// オフスクリーンレンダリングしたシーン
 					_sceneLayerRenderTexture->getSprite()->visit();

@@ -199,6 +199,11 @@ public:
     *
     * @since v1.0
     */
+#ifdef USE_AGTK
+    // AETHER_PGMMV_TEXTURE_AUDIT_V1
+    std::string getCachedTextureAuditInfo() const;
+#endif
+
     std::string getCachedTextureInfo() const;
 
     //Wait for texture cache to quit before destroy instance.
