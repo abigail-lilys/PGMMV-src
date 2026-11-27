@@ -1,3 +1,4 @@
+#include <new>
 /****************************************************************************
 Copyright (c) 2009      Jason Booth
 Copyright (c) 2010-2012 cocos2d-x.org
